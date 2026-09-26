@@ -1,0 +1,478 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model User {
+  id                 String      @id @default(cuid())
+  firstName          String
+  lastName           String
+  email              String      @unique
+  password           String
+  mustChangePassword Boolean     @default(true)
+  status             UserStatus  @default(ACTIVE)
+  inactiveFrom       DateTime?
+  inactiveUntil      DateTime?
+  lastLoginAt        DateTime?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  userRoles          UserRole[]
+  sessions           Session[]
+  sales              Sale[]
+  stockMovements     StockMovement[]
+  approvedRefunds    Refund[]        @relation("ApprovedRefunds")
+  createdPurchaseOrders PurchaseOrder[] @relation("CreatedPurchaseOrders")
+  approvedPurchaseOrders PurchaseOrder[] @relation("ApprovedPurchaseOrders")
+  receivedGoodsReceipts  GoodsReceipt[]  @relation("ReceivedGoodsReceipts")
+
+  @@index([status])
+  @@index([lastLoginAt])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  token        String   @unique
+  userId       String
+  lastActivity DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+}
+
+model Role {
+  id              String           @id @default(cuid())
+  name            String           @unique
+  description     String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+}
+
+model Permission {
+  id              String           @id @default(cuid())
+  name            String           @unique
+  description     String?
+  createdAt       DateTime         @default(now())
+  rolePermissions RolePermission[]
+}
+
+model UserRole {
+  id        String   @id @default(cuid())
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+}
+
+model RolePermission {
+  id           String     @id @default(cuid())
+  roleId       String
+  permissionId String
+  createdAt    DateTime   @default(now())
+  
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+}
+
+model SystemSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([key])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String
+  details   String?
+  createdAt DateTime @default(now())
+
+  @@index([action])
+  @@index([entity])
+  @@index([createdAt])
+}
+
+enum CategoryStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ProductUnit {
+  PCS
+  BOX
+  PACK
+  KG
+  LITER
+  BOTTLE
+  SET
+}
+
+model Category {
+  id          String         @id @default(cuid())
+  name        String         @unique
+  description String?
+  status      CategoryStatus @default(ACTIVE)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  products    Product[]
+
+  @@index([name])
+  @@index([status])
+}
+
+model Product {
+  id           String        @id @default(cuid())
+  sku          String        @unique
+  barcode      String?       @unique
+  name         String
+  categoryId   String
+  costPrice    Decimal       @db.Decimal(12, 2)
+  sellingPrice Decimal       @db.Decimal(12, 2)
+  unit         ProductUnit
+  minimumStock Int           @default(0)
+  image        String?
+  refundable   Boolean       @default(true)
+  status       ProductStatus @default(ACTIVE)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  category       Category        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  stock          Stock?
+  saleItems      SaleItem[]
+  stockMovements StockMovement[]
+  refundItems    RefundItem[]
+  purchaseOrderItems PurchaseOrderItem[]
+  goodsReceiptItems  GoodsReceiptItem[]
+
+  @@index([sku])
+  @@index([barcode])
+  @@index([name])
+  @@index([categoryId])
+  @@index([status])
+}
+
+model Stock {
+  id           String   @id @default(cuid())
+  productId    String   @unique
+  currentStock Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([productId])
+}
+
+enum SaleStatus {
+  COMPLETED
+  VOID
+  PARTIAL_REFUNDED
+  REFUNDED
+}
+
+model Sale {
+  id              String      @id @default(cuid())
+  saleNumber      String      @unique
+  cashierId       String
+  totalAmount     Decimal     @db.Decimal(12, 2)
+  paymentMethod   String      @default("CASH")
+  paymentReceived Decimal?    @db.Decimal(12, 2)
+  change          Decimal?    @db.Decimal(12, 2)
+  status          SaleStatus  @default(COMPLETED)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  cashier       User        @relation(fields: [cashierId], references: [id], onDelete: Restrict)
+  items         SaleItem[]
+  refunds       Refund[]
+
+  @@index([cashierId])
+  @@index([createdAt])
+  @@index([saleNumber])
+}
+
+model SaleItem {
+  id               String       @id @default(cuid())
+  saleId           String
+  productId        String
+  quantity         Int
+  refundedQuantity Int          @default(0)
+  unitPrice        Decimal      @db.Decimal(12, 2)
+  totalPrice       Decimal      @db.Decimal(12, 2)
+  createdAt        DateTime     @default(now())
+
+  sale             Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product          Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  refundItems      RefundItem[]
+
+  @@index([saleId])
+  @@index([productId])
+}
+
+model Refund {
+  id           String       @id @default(cuid())
+  refundNumber String       @unique
+  saleId       String
+  approvedById String
+  reason       String?
+  totalAmount  Decimal      @db.Decimal(12, 2)
+  createdAt    DateTime     @default(now())
+
+  sale       Sale         @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  approvedBy User         @relation("ApprovedRefunds", fields: [approvedById], references: [id], onDelete: Restrict)
+  items      RefundItem[]
+
+  @@index([saleId])
+  @@index([approvedById])
+  @@index([createdAt])
+  @@index([refundNumber])
+}
+
+model RefundItem {
+  id         String   @id @default(cuid())
+  refundId   String
+  saleItemId String
+  productId  String
+  quantity   Int
+  unitPrice  Decimal  @db.Decimal(12, 2)
+  totalPrice Decimal  @db.Decimal(12, 2)
+  createdAt  DateTime @default(now())
+
+  refund   Refund   @relation(fields: [refundId], references: [id], onDelete: Cascade)
+  saleItem SaleItem @relation(fields: [saleItemId], references: [id], onDelete: Restrict)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([refundId])
+  @@index([saleItemId])
+  @@index([productId])
+}
+
+enum ParameterStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model ParameterSetting {
+  id          String          @id @default(cuid())
+  code        String          @unique
+  name        String
+  value       String
+  unit        String?
+  description String?
+  status      ParameterStatus @default(ACTIVE)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([code])
+  @@index([status])
+}
+
+enum MovementType {
+  IN
+  OUT
+  ADJUSTMENT
+  SALE
+  PURCHASE
+  RETURN
+}
+
+model StockMovement {
+  id            String       @id @default(cuid())
+  productId     String
+  type          MovementType
+  quantity      Int
+  previousStock Int
+  newStock      Int
+  reason        String?
+  referenceType String?
+  referenceId   String?
+  notes         String?
+  userId        String?
+  createdAt     DateTime     @default(now())
+
+  product       Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  user          User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([productId])
+  @@index([createdAt])
+  @@index([type])
+  @@index([referenceType])
+  @@index([referenceId])
+}
+
+enum SupplierStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+enum GoodsReceiptStatus {
+  DRAFT
+  CONFIRMED
+  CANCELLED
+}
+
+model Supplier {
+  id            String         @id @default(cuid())
+  code          String         @unique
+  name          String
+  contactPerson String?
+  phone         String?
+  email         String?
+  address       String?
+  status        SupplierStatus @default(ACTIVE)
+  notes         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  purchaseOrders PurchaseOrder[]
+  goodsReceipts  GoodsReceipt[]
+
+  @@index([code])
+  @@index([name])
+  @@index([status])
+}
+
+model PurchaseOrder {
+  id           String              @id @default(cuid())
+  poNumber     String              @unique
+  supplierId   String
+  poDate       DateTime            @default(now())
+  status       PurchaseOrderStatus @default(DRAFT)
+  notes        String?
+  subtotal     Decimal             @db.Decimal(12, 2)
+  discount     Decimal             @default(0) @db.Decimal(12, 2)
+  tax          Decimal             @default(0) @db.Decimal(12, 2)
+  totalAmount  Decimal             @db.Decimal(12, 2)
+  createdById  String
+  approvedById String?
+  approvedAt   DateTime?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  supplier     Supplier            @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  createdBy    User                @relation("CreatedPurchaseOrders", fields: [createdById], references: [id], onDelete: Restrict)
+  approvedBy   User?               @relation("ApprovedPurchaseOrders", fields: [approvedById], references: [id], onDelete: Restrict)
+  items        PurchaseOrderItem[]
+  goodsReceipts GoodsReceipt[]
+
+  @@index([poNumber])
+  @@index([supplierId])
+  @@index([status])
+  @@index([poDate])
+  @@index([createdById])
+}
+
+model PurchaseOrderItem {
+  id               String       @id @default(cuid())
+  purchaseOrderId  String
+  productId        String
+  orderedQuantity  Int
+  receivedQuantity Int          @default(0)
+  unitPrice        Decimal      @db.Decimal(12, 2)
+  discount         Decimal      @default(0) @db.Decimal(12, 2)
+  tax              Decimal      @default(0) @db.Decimal(12, 2)
+  totalPrice       Decimal      @db.Decimal(12, 2)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  purchaseOrder    PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  product          Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+  goodsReceiptItems GoodsReceiptItem[]
+
+  @@index([purchaseOrderId])
+  @@index([productId])
+}
+
+model GoodsReceipt {
+  id              String             @id @default(cuid())
+  grNumber        String             @unique
+  purchaseOrderId String
+  supplierId      String
+  grDate          DateTime           @default(now())
+  status          GoodsReceiptStatus @default(DRAFT)
+  receivedById    String
+  notes           String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  purchaseOrder   PurchaseOrder      @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  supplier        Supplier           @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  receivedBy      User               @relation("ReceivedGoodsReceipts", fields: [receivedById], references: [id], onDelete: Restrict)
+  items           GoodsReceiptItem[]
+
+  @@index([grNumber])
+  @@index([purchaseOrderId])
+  @@index([supplierId])
+  @@index([status])
+  @@index([grDate])
+  @@index([receivedById])
+}
+
+model GoodsReceiptItem {
+  id                  String            @id @default(cuid())
+  goodsReceiptId      String
+  purchaseOrderItemId String
+  productId           String
+  receivedQuantity    Int
+  unitPrice           Decimal           @db.Decimal(12, 2)
+  totalPrice          Decimal           @db.Decimal(12, 2)
+  createdAt           DateTime          @default(now())
+
+  goodsReceipt        GoodsReceipt      @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+  purchaseOrderItem   PurchaseOrderItem @relation(fields: [purchaseOrderItemId], references: [id], onDelete: Restrict)
+  product             Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([goodsReceiptId])
+  @@index([purchaseOrderItemId])
+  @@index([productId])
+}
+
+
+
