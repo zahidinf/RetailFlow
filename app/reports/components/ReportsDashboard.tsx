@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { usePermissions } from "@/app/components/PermissionProvider";
 import TablePagination from "@/app/components/TablePagination";
 import { formatRupiah } from "@/lib/tax-utils";
+import AuditDetailModal from "./AuditDetailModal";
 
 type ReportCategory = "sales" | "inventory" | "purchasing" | "warehouse" | "finance" | "cashier" | "audit";
 
@@ -137,8 +138,15 @@ export default function ReportsDashboard() {
   const [supplierId, setSupplierId] = useState("ALL");
   const [cashierId, setCashierId] = useState("ALL");
   const [paymentMethod, setPaymentMethod] = useState("ALL");
+  const [auditUser, setAuditUser] = useState("ALL");
+  const [auditModule, setAuditModule] = useState("ALL");
+  const [auditEntity, setAuditEntity] = useState("ALL");
+  const [auditAction, setAuditAction] = useState("ALL");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+
+  // Selected audit log for detail modal
+  const [selectedAuditLog, setSelectedAuditLog] = useState<any | null>(null);
 
   // Metadata dropdown options from server
   const [filterOptions, setFilterOptions] = useState<{
@@ -146,11 +154,17 @@ export default function ReportsDashboard() {
     suppliers: Array<{ id: string; name: string; code: string }>;
     cashiers: Array<{ id: string; name: string }>;
     users: Array<{ id: string; name: string }>;
+    auditModules?: string[];
+    auditEntities?: string[];
+    auditActions?: string[];
   }>({
     categories: [],
     suppliers: [],
     cashiers: [],
     users: [],
+    auditModules: [],
+    auditEntities: [],
+    auditActions: [],
   });
 
   // Report data state
@@ -202,6 +216,10 @@ export default function ReportsDashboard() {
       if (supplierId !== "ALL") params.set("supplierId", supplierId);
       if (cashierId !== "ALL") params.set("cashierId", cashierId);
       if (paymentMethod !== "ALL") params.set("paymentMethod", paymentMethod);
+      if (auditUser !== "ALL") params.set("userId", auditUser);
+      if (auditModule !== "ALL") params.set("module", auditModule);
+      if (auditEntity !== "ALL") params.set("entity", auditEntity);
+      if (auditAction !== "ALL") params.set("action", auditAction);
       params.set("page", page.toString());
       params.set("pageSize", pageSize.toString());
 
@@ -236,6 +254,10 @@ export default function ReportsDashboard() {
     supplierId,
     cashierId,
     paymentMethod,
+    auditUser,
+    auditModule,
+    auditEntity,
+    auditAction,
     page,
     pageSize,
   ]);
@@ -251,6 +273,10 @@ export default function ReportsDashboard() {
     if (supplierId !== "ALL") params.set("supplierId", supplierId);
     if (cashierId !== "ALL") params.set("cashierId", cashierId);
     if (paymentMethod !== "ALL") params.set("paymentMethod", paymentMethod);
+    if (auditUser !== "ALL") params.set("userId", auditUser);
+    if (auditModule !== "ALL") params.set("module", auditModule);
+    if (auditEntity !== "ALL") params.set("entity", auditEntity);
+    if (auditAction !== "ALL") params.set("action", auditAction);
 
     window.open(`/api/reports/${selectedReport}/export?${params.toString()}`, "_blank");
   };
@@ -299,6 +325,7 @@ export default function ReportsDashboard() {
   const isCashierFilterRelevant = ["sales-transactions"].includes(selectedReport);
   const isPaymentMethodFilterRelevant = ["sales-transactions"].includes(selectedReport);
   const isStatusFilterRelevant = ["sales-transactions", "purchase-orders", "goods-receipt", "stock-summary"].includes(selectedReport);
+  const isAuditFilterRelevant = selectedReport === "user-activity";
 
   return (
     <div className="space-y-6">
@@ -541,6 +568,95 @@ export default function ReportsDashboard() {
               </select>
             </div>
           )}
+
+          {isAuditFilterRelevant && (
+            <>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Module</label>
+                <select
+                  value={auditModule}
+                  onChange={(e) => {
+                    setAuditModule(e.target.value);
+                    setPage(1);
+                  }}
+                  className="w-full text-xs px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 cursor-pointer"
+                >
+                  <option value="ALL">All Modules</option>
+                  {(filterOptions.auditModules && filterOptions.auditModules.length > 0
+                    ? filterOptions.auditModules
+                    : ["Administration", "Product Management", "Purchasing"]
+                  ).map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Entity</label>
+                <select
+                  value={auditEntity}
+                  onChange={(e) => {
+                    setAuditEntity(e.target.value);
+                    setPage(1);
+                  }}
+                  className="w-full text-xs px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 cursor-pointer"
+                >
+                  <option value="ALL">All Entities</option>
+                  {(filterOptions.auditEntities && filterOptions.auditEntities.length > 0
+                    ? filterOptions.auditEntities
+                    : ["User", "Role", "Category", "Product", "Stock", "ParameterSetting", "SessionSetting", "Supplier"]
+                  ).map((ent) => (
+                    <option key={ent} value={ent}>
+                      {ent}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Action</label>
+                <select
+                  value={auditAction}
+                  onChange={(e) => {
+                    setAuditAction(e.target.value);
+                    setPage(1);
+                  }}
+                  className="w-full text-xs px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 cursor-pointer"
+                >
+                  <option value="ALL">All Actions</option>
+                  {(filterOptions.auditActions && filterOptions.auditActions.length > 0
+                    ? filterOptions.auditActions
+                    : ["CREATE", "UPDATE", "DELETE"]
+                  ).map((act) => (
+                    <option key={act} value={act}>
+                      {act}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">User</label>
+                <select
+                  value={auditUser}
+                  onChange={(e) => {
+                    setAuditUser(e.target.value);
+                    setPage(1);
+                  }}
+                  className="w-full text-xs px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 cursor-pointer"
+                >
+                  <option value="ALL">All Users</option>
+                  {filterOptions.users.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -557,7 +673,22 @@ export default function ReportsDashboard() {
       ) : !reportData ? (
         <div className="py-12 text-center text-slate-400">Select a report to view details</div>
       ) : (
-        renderReportContent(selectedReport, reportData, page, pageSize, setPage, setPageSize)
+        renderReportContent(
+          selectedReport,
+          reportData,
+          page,
+          pageSize,
+          setPage,
+          setPageSize,
+          setSelectedAuditLog
+        )
+      )}
+
+      {selectedAuditLog && (
+        <AuditDetailModal
+          log={selectedAuditLog}
+          onClose={() => setSelectedAuditLog(null)}
+        />
       )}
     </div>
   );
@@ -569,7 +700,8 @@ function renderReportContent(
   page: number,
   pageSize: number,
   setPage: (p: number) => void,
-  setPageSize: (s: number) => void
+  setPageSize: (s: number) => void,
+  onViewDiff: (log: any) => void
 ) {
   // 1. KPI / Summary Cards (for single-object summary reports)
   if (data && !data.items && typeof data === "object") {
@@ -602,6 +734,10 @@ function renderReportContent(
         No records found matching the applied filters.
       </div>
     );
+  }
+
+  if (reportId === "user-activity") {
+    return renderUserActivityTable(items, page, pageSize, total, setPage, setPageSize, onViewDiff);
   }
 
   // Extract columns dynamically from the first record
@@ -738,4 +874,103 @@ function renderCell(key: string, val: any) {
   }
 
   return String(val);
+}
+
+function renderUserActivityTable(
+  items: any[],
+  page: number,
+  pageSize: number,
+  total: number,
+  setPage: (p: number) => void,
+  setPageSize: (s: number) => void,
+  onViewDiff: (log: any) => void
+) {
+  return (
+    <div className="space-y-4">
+      <div className="overflow-x-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs">
+        <table className="w-full text-left text-xs text-slate-700 dark:text-slate-300">
+          <thead className="bg-slate-50 dark:bg-slate-800/60 uppercase font-semibold text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
+            <tr>
+              <th className="px-4 py-3 whitespace-nowrap">Timestamp</th>
+              <th className="px-4 py-3 whitespace-nowrap">User</th>
+              <th className="px-4 py-3 whitespace-nowrap">Module</th>
+              <th className="px-4 py-3 whitespace-nowrap">Entity</th>
+              <th className="px-4 py-3 whitespace-nowrap">Action</th>
+              <th className="px-4 py-3 whitespace-nowrap">Record</th>
+              <th className="px-4 py-3">Description</th>
+              <th className="px-4 py-3 text-right whitespace-nowrap">Changes & Diff</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+            {items.map((row: any, idx: number) => {
+              const act = (row.action || "").toUpperCase();
+              const actionBadge =
+                act === "CREATE"
+                  ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
+                  : act === "DELETE"
+                  ? "bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-200 dark:border-rose-800"
+                  : "bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400 border border-blue-200 dark:border-blue-800";
+
+              const d = new Date(row.timestamp);
+              const formattedDate = !isNaN(d.getTime()) ? d.toLocaleString() : row.timestamp;
+
+              return (
+                <tr key={row.id || idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
+                  <td className="px-4 py-3 whitespace-nowrap font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                    {formattedDate}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap font-medium text-slate-900 dark:text-white">
+                    {row.user}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <span className="inline-block px-2 py-0.5 text-[11px] font-medium rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                      {row.module}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <span className="font-mono text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      {row.entity}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <span className={`inline-block px-2 py-0.5 text-[11px] font-bold rounded-md ${actionBadge}`}>
+                      {act}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <span className="font-mono text-[11px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-800 dark:text-slate-200">
+                      {row.record}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-slate-600 dark:text-slate-400 max-w-xs truncate" title={row.description}>
+                    {row.description}
+                  </td>
+                  <td className="px-4 py-3 text-right whitespace-nowrap">
+                    <button
+                      onClick={() => onViewDiff(row)}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 rounded-md transition-colors cursor-pointer"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                      View Diff
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <TablePagination
+        currentPage={page}
+        pageSize={pageSize}
+        totalItems={total}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
+      />
+    </div>
+  );
 }

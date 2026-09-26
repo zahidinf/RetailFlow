@@ -2,9 +2,10 @@
 
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth-guards";
-import { revalidatePath } from "next/cache";
+import { safeRevalidatePath } from "@/lib/cache-utils";
 import { getStockStatus, formatStockStatus, StockStatusType } from "@/lib/stock-utils";
 import { Prisma, ProductUnit } from "@prisma/client";
+import { recordAuditLog } from "@/lib/audit";
 
 export interface StockItem {
   id: string;
@@ -149,6 +150,15 @@ export async function updateStock(
 
   const existingStock = await prisma.stock.findUnique({
     where: { id: stockId },
+    include: {
+      product: {
+        select: {
+          id: true,
+          sku: true,
+          name: true,
+        },
+      },
+    },
   });
 
   if (!existingStock) {
@@ -190,11 +200,36 @@ export async function updateStock(
         userId: session.id,
       },
     });
+
+    await recordAuditLog({
+      tx,
+      userId: session.id,
+      action: "UPDATE",
+      module: "Product Management",
+      entity: "Stock",
+      recordId: stockId,
+      recordIdentifier: `${existingStock.product.sku} - ${existingStock.product.name}`,
+      description: `Adjusted stock for "${existingStock.product.name}" from ${previousStock} to ${currentStock} (${trimmedReason})`,
+      previousValue: {
+        productId: existingStock.productId,
+        sku: existingStock.product.sku,
+        name: existingStock.product.name,
+        currentStock: previousStock,
+      },
+      newValue: {
+        productId: existingStock.productId,
+        sku: existingStock.product.sku,
+        name: existingStock.product.name,
+        currentStock,
+        reason: trimmedReason,
+        adjustmentNumber: adjNumber,
+      },
+    });
   });
 
-  revalidatePath("/admin/stock");
-  revalidatePath("/admin/products");
-  revalidatePath("/inventory/movements");
+  safeRevalidatePath("/admin/stock");
+  safeRevalidatePath("/admin/products");
+  safeRevalidatePath("/inventory/movements");
 
   return { success: true };
 }

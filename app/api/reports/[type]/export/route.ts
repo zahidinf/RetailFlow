@@ -112,6 +112,8 @@ export async function GET(
   const productId = searchParams.get("productId") || undefined;
   const userId = searchParams.get("userId") || undefined;
   const action = searchParams.get("action") || undefined;
+  const auditModule = searchParams.get("module") || undefined;
+  const auditEntity = searchParams.get("entity") || undefined;
 
   // For export, fetch maximum dataset (up to 5000 items)
   const pageSize = 5000;
@@ -257,6 +259,32 @@ export async function GET(
           i.status,
           i.totalItemsReceived,
           i.receivedBy,
+        ]);
+        csvContent = convertToCSV(headers, rows);
+        break;
+      }
+      case "user-activity": {
+        const res = await reports.getUserActivityReport({
+          startDate,
+          endDate,
+          userId,
+          action,
+          module: auditModule,
+          entity: auditEntity,
+          search,
+          page,
+          pageSize,
+        });
+        const headers = ["Timestamp", "User", "Module", "Entity", "Action", "Record", "Description", "Status"];
+        const rows = res.items.map((i) => [
+          i.timestamp,
+          i.user,
+          i.module,
+          i.entity,
+          i.action,
+          i.record,
+          i.description,
+          i.status,
         ]);
         csvContent = convertToCSV(headers, rows);
         break;

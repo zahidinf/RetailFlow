@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth-guards";
-import { revalidatePath } from "next/cache";
+import { safeRevalidatePath } from "@/lib/cache-utils";
 import {
   getParameterSettings,
   validateParameterInput,
@@ -10,6 +10,7 @@ import {
   ensureDefaultParameterSettings,
 } from "@/lib/parameter-settings";
 import { ParameterStatus } from "@prisma/client";
+import { recordAuditLog } from "@/lib/audit";
 
 export async function fetchParameterSettings(search?: string, status?: string) {
   await requirePermission("PARAMETER_SETTINGS_VIEW");
@@ -17,7 +18,7 @@ export async function fetchParameterSettings(search?: string, status?: string) {
 }
 
 export async function createParameterSettingAction(formData: FormData) {
-  await requirePermission("PARAMETER_SETTINGS_CREATE");
+  const session = await requirePermission("PARAMETER_SETTINGS_CREATE");
 
   const code = (formData.get("code") as string)?.trim().toUpperCase();
   const name = (formData.get("name") as string)?.trim();
@@ -46,19 +47,44 @@ export async function createParameterSettingAction(formData: FormData) {
   }
 
   try {
-    const created = await prisma.parameterSetting.create({
-      data: {
-        code,
-        name,
-        value,
-        unit,
-        description,
-        status,
-      },
+    const created = await prisma.$transaction(async (tx) => {
+      const item = await tx.parameterSetting.create({
+        data: {
+          code,
+          name,
+          value,
+          unit,
+          description,
+          status,
+        },
+      });
+
+      await recordAuditLog({
+        tx,
+        userId: session.id,
+        action: "CREATE",
+        module: "Administration",
+        entity: "ParameterSetting",
+        recordId: item.id,
+        recordIdentifier: `${item.code} (${item.name})`,
+        description: `Created parameter setting "${item.code}"`,
+        previousValue: null,
+        newValue: {
+          id: item.id,
+          code: item.code,
+          name: item.name,
+          value: item.value,
+          unit: item.unit,
+          description: item.description,
+          status: item.status,
+        },
+      });
+
+      return item;
     });
 
-    revalidatePath("/admin/parameter-settings");
-    revalidatePath("/administration/parameter-settings");
+    safeRevalidatePath("/admin/parameter-settings");
+    safeRevalidatePath("/administration/parameter-settings");
     return { success: true, parameter: created };
   } catch (error: any) {
     return { error: error.message || "Failed to create parameter setting" };
@@ -66,7 +92,7 @@ export async function createParameterSettingAction(formData: FormData) {
 }
 
 export async function updateParameterSettingAction(id: string, formData: FormData) {
-  await requirePermission("PARAMETER_SETTINGS_UPDATE");
+  const session = await requirePermission("PARAMETER_SETTINGS_UPDATE");
 
   const name = (formData.get("name") as string)?.trim();
   const value = (formData.get("value") as string)?.trim();
@@ -93,19 +119,52 @@ export async function updateParameterSettingAction(id: string, formData: FormDat
   }
 
   try {
-    const updated = await prisma.parameterSetting.update({
-      where: { id },
-      data: {
-        name,
-        value,
-        unit,
-        description,
-        status,
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      const item = await tx.parameterSetting.update({
+        where: { id },
+        data: {
+          name,
+          value,
+          unit,
+          description,
+          status,
+        },
+      });
+
+      await recordAuditLog({
+        tx,
+        userId: session.id,
+        action: "UPDATE",
+        module: "Administration",
+        entity: "ParameterSetting",
+        recordId: id,
+        recordIdentifier: `${existing.code} (${item.name})`,
+        description: `Updated parameter setting "${existing.code}"`,
+        previousValue: {
+          id: existing.id,
+          code: existing.code,
+          name: existing.name,
+          value: existing.value,
+          unit: existing.unit,
+          description: existing.description,
+          status: existing.status,
+        },
+        newValue: {
+          id: item.id,
+          code: item.code,
+          name: item.name,
+          value: item.value,
+          unit: item.unit,
+          description: item.description,
+          status: item.status,
+        },
+      });
+
+      return item;
     });
 
-    revalidatePath("/admin/parameter-settings");
-    revalidatePath("/administration/parameter-settings");
+    safeRevalidatePath("/admin/parameter-settings");
+    safeRevalidatePath("/administration/parameter-settings");
     return { success: true, parameter: updated };
   } catch (error: any) {
     return { error: error.message || "Failed to update parameter setting" };
@@ -113,7 +172,7 @@ export async function updateParameterSettingAction(id: string, formData: FormDat
 }
 
 export async function deleteParameterSettingAction(id: string) {
-  await requirePermission("PARAMETER_SETTINGS_DELETE");
+  const session = await requirePermission("PARAMETER_SETTINGS_DELETE");
 
   const existing = await prisma.parameterSetting.findUnique({
     where: { id },
@@ -127,12 +186,35 @@ export async function deleteParameterSettingAction(id: string) {
   }
 
   try {
-    await prisma.parameterSetting.delete({
-      where: { id },
+    await prisma.$transaction(async (tx) => {
+      await recordAuditLog({
+        tx,
+        userId: session.id,
+        action: "DELETE",
+        module: "Administration",
+        entity: "ParameterSetting",
+        recordId: id,
+        recordIdentifier: `${existing.code} (${existing.name})`,
+        description: `Deleted parameter setting "${existing.code}"`,
+        previousValue: {
+          id: existing.id,
+          code: existing.code,
+          name: existing.name,
+          value: existing.value,
+          unit: existing.unit,
+          description: existing.description,
+          status: existing.status,
+        },
+        newValue: null,
+      });
+
+      await tx.parameterSetting.delete({
+        where: { id },
+      });
     });
 
-    revalidatePath("/admin/parameter-settings");
-    revalidatePath("/administration/parameter-settings");
+    safeRevalidatePath("/admin/parameter-settings");
+    safeRevalidatePath("/administration/parameter-settings");
     return { success: true };
   } catch (error: any) {
     return { error: error.message || "Failed to delete parameter setting" };

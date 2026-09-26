@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth, ForbiddenError } from "@/lib/auth-guards";
 import { hasPermission } from "@/lib/rbac";
 import { Prisma, SupplierStatus, PurchaseOrderStatus, GoodsReceiptStatus } from "@prisma/client";
+import { recordAuditLog } from "@/lib/audit";
 
 export class PurchasingAuthorizationError extends ForbiddenError {
   constructor(message: string = "Forbidden: Insufficient permissions") {
@@ -176,17 +177,43 @@ export async function createSupplier(input: CreateSupplierInput) {
     throw new PurchasingValidationError(`Supplier with code "${code}" already exists`);
   }
 
-  return await prisma.supplier.create({
-    data: {
-      code,
-      name: input.name.trim(),
-      contactPerson: input.contactPerson?.trim() || null,
-      phone: input.phone?.trim() || null,
-      email: input.email?.trim() || null,
-      address: input.address?.trim() || null,
-      notes: input.notes?.trim() || null,
-      status: "ACTIVE",
-    },
+  return await prisma.$transaction(async (tx) => {
+    const created = await tx.supplier.create({
+      data: {
+        code,
+        name: input.name.trim(),
+        contactPerson: input.contactPerson?.trim() || null,
+        phone: input.phone?.trim() || null,
+        email: input.email?.trim() || null,
+        address: input.address?.trim() || null,
+        notes: input.notes?.trim() || null,
+        status: "ACTIVE",
+      },
+    });
+
+    await recordAuditLog({
+      tx,
+      userId: session.id,
+      action: "CREATE",
+      module: "Purchasing",
+      entity: "Supplier",
+      recordId: created.id,
+      recordIdentifier: `${created.code} - ${created.name}`,
+      description: `Created supplier "${created.name}" (${created.code})`,
+      previousValue: null,
+      newValue: {
+        id: created.id,
+        code: created.code,
+        name: created.name,
+        contactPerson: created.contactPerson,
+        phone: created.phone,
+        email: created.email,
+        address: created.address,
+        status: created.status,
+      },
+    });
+
+    return created;
   });
 }
 
@@ -217,18 +244,53 @@ export async function updateSupplier(supplierId: string, input: UpdateSupplierIn
     }
   }
 
-  return await prisma.supplier.update({
-    where: { id: supplierId },
-    data: {
-      code: input.code ? input.code.trim().toUpperCase() : existing.code,
-      name: input.name.trim(),
-      contactPerson: input.contactPerson !== undefined ? input.contactPerson.trim() || null : existing.contactPerson,
-      phone: input.phone !== undefined ? input.phone.trim() || null : existing.phone,
-      email: input.email !== undefined ? input.email.trim() || null : existing.email,
-      address: input.address !== undefined ? input.address.trim() || null : existing.address,
-      notes: input.notes !== undefined ? input.notes.trim() || null : existing.notes,
-      status: input.status || existing.status,
-    },
+  return await prisma.$transaction(async (tx) => {
+    const updated = await tx.supplier.update({
+      where: { id: supplierId },
+      data: {
+        code: input.code ? input.code.trim().toUpperCase() : existing.code,
+        name: input.name.trim(),
+        contactPerson: input.contactPerson !== undefined ? input.contactPerson.trim() || null : existing.contactPerson,
+        phone: input.phone !== undefined ? input.phone.trim() || null : existing.phone,
+        email: input.email !== undefined ? input.email.trim() || null : existing.email,
+        address: input.address !== undefined ? input.address.trim() || null : existing.address,
+        notes: input.notes !== undefined ? input.notes.trim() || null : existing.notes,
+        status: input.status || existing.status,
+      },
+    });
+
+    await recordAuditLog({
+      tx,
+      userId: session.id,
+      action: "UPDATE",
+      module: "Purchasing",
+      entity: "Supplier",
+      recordId: supplierId,
+      recordIdentifier: `${updated.code} - ${updated.name}`,
+      description: `Updated supplier "${updated.name}" (${updated.code})`,
+      previousValue: {
+        id: existing.id,
+        code: existing.code,
+        name: existing.name,
+        contactPerson: existing.contactPerson,
+        phone: existing.phone,
+        email: existing.email,
+        address: existing.address,
+        status: existing.status,
+      },
+      newValue: {
+        id: updated.id,
+        code: updated.code,
+        name: updated.name,
+        contactPerson: updated.contactPerson,
+        phone: updated.phone,
+        email: updated.email,
+        address: updated.address,
+        status: updated.status,
+      },
+    });
+
+    return updated;
   });
 }
 
@@ -249,9 +311,26 @@ export async function toggleSupplierStatus(supplierId: string) {
 
   const newStatus: SupplierStatus = existing.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
 
-  return await prisma.supplier.update({
-    where: { id: supplierId },
-    data: { status: newStatus },
+  return await prisma.$transaction(async (tx) => {
+    const updated = await tx.supplier.update({
+      where: { id: supplierId },
+      data: { status: newStatus },
+    });
+
+    await recordAuditLog({
+      tx,
+      userId: session.id,
+      action: "UPDATE",
+      module: "Purchasing",
+      entity: "Supplier",
+      recordId: supplierId,
+      recordIdentifier: `${existing.code} - ${existing.name}`,
+      description: `Changed supplier status to ${newStatus} for "${existing.name}" (${existing.code})`,
+      previousValue: { status: existing.status },
+      newValue: { status: updated.status },
+    });
+
+    return updated;
   });
 }
 

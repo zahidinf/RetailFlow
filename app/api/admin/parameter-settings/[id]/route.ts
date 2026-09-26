@@ -5,6 +5,7 @@ import { isUserSuperAdmin } from "@/lib/super-admin-validator";
 import { prisma } from "@/lib/prisma";
 import { validateParameterInput, PARAM_REFUND_VALIDITY_PERIOD } from "@/lib/parameter-settings";
 import { ParameterStatus } from "@prisma/client";
+import { recordAuditLog } from "@/lib/audit";
 
 /**
  * Helper to check permission
@@ -75,15 +76,48 @@ async function handleUpdate(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ error: validationError }, { status: 400 });
     }
 
-    const updated = await prisma.parameterSetting.update({
-      where: { id },
-      data: {
-        name,
-        value,
-        unit,
-        description,
-        status,
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      const item = await tx.parameterSetting.update({
+        where: { id },
+        data: {
+          name,
+          value,
+          unit,
+          description,
+          status,
+        },
+      });
+
+      await recordAuditLog({
+        tx,
+        userId: auth.session?.id,
+        action: "UPDATE",
+        module: "Administration",
+        entity: "ParameterSetting",
+        recordId: id,
+        recordIdentifier: `${existing.code} (${item.name})`,
+        description: `Updated parameter setting "${existing.code}"`,
+        previousValue: {
+          id: existing.id,
+          code: existing.code,
+          name: existing.name,
+          value: existing.value,
+          unit: existing.unit,
+          description: existing.description,
+          status: existing.status,
+        },
+        newValue: {
+          id: item.id,
+          code: item.code,
+          name: item.name,
+          value: item.value,
+          unit: item.unit,
+          description: item.description,
+          status: item.status,
+        },
+      });
+
+      return item;
     });
 
     return NextResponse.json({ success: true, data: updated });
@@ -130,8 +164,31 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
       );
     }
 
-    await prisma.parameterSetting.delete({
-      where: { id },
+    await prisma.$transaction(async (tx) => {
+      await recordAuditLog({
+        tx,
+        userId: auth.session?.id,
+        action: "DELETE",
+        module: "Administration",
+        entity: "ParameterSetting",
+        recordId: id,
+        recordIdentifier: `${existing.code} (${existing.name})`,
+        description: `Deleted parameter setting "${existing.code}"`,
+        previousValue: {
+          id: existing.id,
+          code: existing.code,
+          name: existing.name,
+          value: existing.value,
+          unit: existing.unit,
+          description: existing.description,
+          status: existing.status,
+        },
+        newValue: null,
+      });
+
+      await tx.parameterSetting.delete({
+        where: { id },
+      });
     });
 
     return NextResponse.json({ success: true, message: "Parameter setting deleted" });

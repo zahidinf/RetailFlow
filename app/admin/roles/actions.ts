@@ -2,8 +2,9 @@
 
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth-guards";
-import { revalidatePath } from "next/cache";
+import { safeRevalidatePath } from "@/lib/cache-utils";
 import { clearAllPermissionCaches } from "@/lib/rbac";
+import { recordAuditLog } from "@/lib/audit";
 
 export async function getRoles() {
   await requirePermission("ROLE_MANAGE");
@@ -38,7 +39,7 @@ export async function getPermissions() {
 }
 
 export async function createRole(formData: FormData) {
-  await requirePermission("ROLE_MANAGE");
+  const session = await requirePermission("ROLE_MANAGE");
 
   const name = (formData.get("name") as string)?.trim();
   const description = (formData.get("description") as string)?.trim();
@@ -99,15 +100,38 @@ export async function createRole(formData: FormData) {
         },
       });
     }
+
+    const assignedPermissions = await tx.permission.findMany({
+      where: { id: { in: parsedPermissionIds } },
+      select: { name: true },
+    });
+
+    await recordAuditLog({
+      tx,
+      userId: session.id,
+      action: "CREATE",
+      module: "Administration",
+      entity: "Role",
+      recordId: role.id,
+      recordIdentifier: role.name,
+      description: `Created role "${role.name}" with ${parsedPermissionIds.length} permissions`,
+      previousValue: null,
+      newValue: {
+        id: role.id,
+        name: role.name,
+        description: role.description,
+        permissions: assignedPermissions.map((p) => p.name),
+      },
+    });
   });
 
-  revalidatePath("/admin/roles");
+  safeRevalidatePath("/admin/roles");
   clearAllPermissionCaches();
   return { success: true };
 }
 
 export async function updateRole(roleId: string, formData: FormData) {
-  await requirePermission("ROLE_MANAGE");
+  const session = await requirePermission("ROLE_MANAGE");
 
   const name = (formData.get("name") as string)?.trim();
   const description = (formData.get("description") as string)?.trim();
@@ -139,6 +163,13 @@ export async function updateRole(roleId: string, formData: FormData) {
   // Find existing role
   const existingRole = await prisma.role.findUnique({
     where: { id: roleId },
+    include: {
+      rolePermissions: {
+        include: {
+          permission: true,
+        },
+      },
+    },
   });
 
   if (!existingRole) {
@@ -167,7 +198,7 @@ export async function updateRole(roleId: string, formData: FormData) {
   // Update role and permissions in transaction
   await prisma.$transaction(async (tx) => {
     // Update role
-    await tx.role.update({
+    const updatedRole = await tx.role.update({
       where: { id: roleId },
       data: {
         name,
@@ -189,15 +220,43 @@ export async function updateRole(roleId: string, formData: FormData) {
         },
       });
     }
+
+    const assignedPermissions = await tx.permission.findMany({
+      where: { id: { in: parsedPermissionIds } },
+      select: { name: true },
+    });
+
+    await recordAuditLog({
+      tx,
+      userId: session.id,
+      action: "UPDATE",
+      module: "Administration",
+      entity: "Role",
+      recordId: roleId,
+      recordIdentifier: updatedRole.name,
+      description: `Updated role "${updatedRole.name}"`,
+      previousValue: {
+        id: existingRole.id,
+        name: existingRole.name,
+        description: existingRole.description,
+        permissions: existingRole.rolePermissions.map((rp) => rp.permission.name),
+      },
+      newValue: {
+        id: updatedRole.id,
+        name: updatedRole.name,
+        description: updatedRole.description,
+        permissions: assignedPermissions.map((p) => p.name),
+      },
+    });
   });
 
-  revalidatePath("/admin/roles");
+  safeRevalidatePath("/admin/roles");
   clearAllPermissionCaches();
   return { success: true };
 }
 
 export async function deleteRole(roleId: string) {
-  await requirePermission("ROLE_MANAGE");
+  const session = await requirePermission("ROLE_MANAGE");
 
   // Find role
   const role = await prisma.role.findUnique({
@@ -206,6 +265,11 @@ export async function deleteRole(roleId: string) {
       _count: {
         select: {
           userRoles: true,
+        },
+      },
+      rolePermissions: {
+        include: {
+          permission: true,
         },
       },
     },
@@ -227,12 +291,32 @@ export async function deleteRole(roleId: string) {
     };
   }
 
-  // Delete role
-  await prisma.role.delete({
-    where: { id: roleId },
+  // Delete role in transaction with audit log
+  await prisma.$transaction(async (tx) => {
+    await recordAuditLog({
+      tx,
+      userId: session.id,
+      action: "DELETE",
+      module: "Administration",
+      entity: "Role",
+      recordId: roleId,
+      recordIdentifier: role.name,
+      description: `Deleted role "${role.name}"`,
+      previousValue: {
+        id: role.id,
+        name: role.name,
+        description: role.description,
+        permissions: role.rolePermissions.map((rp) => rp.permission.name),
+      },
+      newValue: null,
+    });
+
+    await tx.role.delete({
+      where: { id: roleId },
+    });
   });
 
-  revalidatePath("/admin/roles");
+  safeRevalidatePath("/admin/roles");
   clearAllPermissionCaches();
   return { success: true };
 }

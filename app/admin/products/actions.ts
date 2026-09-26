@@ -2,11 +2,12 @@
 
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth-guards";
-import { revalidatePath } from "next/cache";
+import { safeRevalidatePath } from "@/lib/cache-utils";
 import { ProductStatus, ProductUnit } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 import { saveProductImageFile, deleteProductImageFile } from "@/lib/product-image-server";
 import { isValidProductUnit } from "@/lib/units";
+import { recordAuditLog } from "@/lib/audit";
 
 export async function getProducts(search?: string, categoryId?: string, status?: string) {
   await requirePermission("PRODUCT_VIEW");
@@ -65,7 +66,7 @@ export async function getCategoriesForSelect() {
 }
 
 export async function createProduct(formData: FormData) {
-  await requirePermission("PRODUCT_CREATE");
+  const session = await requirePermission("PRODUCT_CREATE");
 
   const sku = (formData.get("sku") as string)?.trim();
   const barcode = (formData.get("barcode") as string)?.trim() || null;
@@ -158,12 +159,43 @@ export async function createProduct(formData: FormData) {
           refundable,
           status,
         },
+        include: {
+          category: {
+            select: { name: true },
+          },
+        },
       });
 
       await tx.stock.create({
         data: {
           productId: product.id,
           currentStock: 0,
+        },
+      });
+
+      await recordAuditLog({
+        tx,
+        userId: session.id,
+        action: "CREATE",
+        module: "Product Management",
+        entity: "Product",
+        recordId: product.id,
+        recordIdentifier: `${product.sku} - ${product.name}`,
+        description: `Created product "${product.name}" (${product.sku})`,
+        previousValue: null,
+        newValue: {
+          id: product.id,
+          sku: product.sku,
+          barcode: product.barcode,
+          name: product.name,
+          category: product.category.name,
+          costPrice: Number(product.costPrice),
+          sellingPrice: Number(product.sellingPrice),
+          unit: product.unit,
+          minimumStock: product.minimumStock,
+          refundable: product.refundable,
+          status: product.status,
+          image: product.image,
         },
       });
     });
@@ -174,13 +206,13 @@ export async function createProduct(formData: FormData) {
     throw err;
   }
 
-  revalidatePath("/admin/products");
-  revalidatePath("/admin/stock");
+  safeRevalidatePath("/admin/products");
+  safeRevalidatePath("/admin/stock");
   return { success: true };
 }
 
 export async function updateProduct(productId: string, formData: FormData) {
-  await requirePermission("PRODUCT_UPDATE");
+  const session = await requirePermission("PRODUCT_UPDATE");
 
   const sku = (formData.get("sku") as string)?.trim();
   const barcode = (formData.get("barcode") as string)?.trim() || null;
@@ -219,6 +251,11 @@ export async function updateProduct(productId: string, formData: FormData) {
 
   const existingProduct = await prisma.product.findUnique({
     where: { id: productId },
+    include: {
+      category: {
+        select: { name: true },
+      },
+    },
   });
   if (!existingProduct) {
     return { error: "Product not found" };
@@ -275,21 +312,67 @@ export async function updateProduct(productId: string, formData: FormData) {
       : existingProduct.refundable;
 
   try {
-    await prisma.product.update({
-      where: { id: productId },
-      data: {
-        sku,
-        barcode,
-        name,
-        categoryId,
-        costPrice: new Prisma.Decimal(costPrice),
-        sellingPrice: new Prisma.Decimal(sellingPrice),
-        unit,
-        minimumStock,
-        refundable,
-        status,
-        ...(imageToSet !== undefined ? { image: imageToSet } : {}),
-      },
+    await prisma.$transaction(async (tx) => {
+      const updatedProduct = await tx.product.update({
+        where: { id: productId },
+        data: {
+          sku,
+          barcode,
+          name,
+          categoryId,
+          costPrice: new Prisma.Decimal(costPrice),
+          sellingPrice: new Prisma.Decimal(sellingPrice),
+          unit,
+          minimumStock,
+          refundable,
+          status,
+          ...(imageToSet !== undefined ? { image: imageToSet } : {}),
+        },
+        include: {
+          category: {
+            select: { name: true },
+          },
+        },
+      });
+
+      await recordAuditLog({
+        tx,
+        userId: session.id,
+        action: "UPDATE",
+        module: "Product Management",
+        entity: "Product",
+        recordId: productId,
+        recordIdentifier: `${updatedProduct.sku} - ${updatedProduct.name}`,
+        description: `Updated product "${updatedProduct.name}" (${updatedProduct.sku})`,
+        previousValue: {
+          id: existingProduct.id,
+          sku: existingProduct.sku,
+          barcode: existingProduct.barcode,
+          name: existingProduct.name,
+          category: existingProduct.category.name,
+          costPrice: Number(existingProduct.costPrice),
+          sellingPrice: Number(existingProduct.sellingPrice),
+          unit: existingProduct.unit,
+          minimumStock: existingProduct.minimumStock,
+          refundable: existingProduct.refundable,
+          status: existingProduct.status,
+          image: existingProduct.image,
+        },
+        newValue: {
+          id: updatedProduct.id,
+          sku: updatedProduct.sku,
+          barcode: updatedProduct.barcode,
+          name: updatedProduct.name,
+          category: updatedProduct.category.name,
+          costPrice: Number(updatedProduct.costPrice),
+          sellingPrice: Number(updatedProduct.sellingPrice),
+          unit: updatedProduct.unit,
+          minimumStock: updatedProduct.minimumStock,
+          refundable: updatedProduct.refundable,
+          status: updatedProduct.status,
+          image: updatedProduct.image,
+        },
+      });
     });
 
     // If image was replaced or removed, delete the old image file
@@ -304,18 +387,21 @@ export async function updateProduct(productId: string, formData: FormData) {
     throw err;
   }
 
-  revalidatePath("/admin/products");
-  revalidatePath("/admin/stock");
+  safeRevalidatePath("/admin/products");
+  safeRevalidatePath("/admin/stock");
   return { success: true };
 }
 
 export async function deleteProduct(productId: string) {
-  await requirePermission("PRODUCT_DELETE");
+  const session = await requirePermission("PRODUCT_DELETE");
 
   const product = await prisma.product.findUnique({
     where: { id: productId },
     include: {
       stock: true,
+      category: {
+        select: { name: true },
+      },
     },
   });
 
@@ -329,8 +415,43 @@ export async function deleteProduct(productId: string) {
     };
   }
 
-  // Safe to delete - delete stock then product in transaction
+  const movementCount = await prisma.stockMovement.count({
+    where: { productId },
+  });
+  if (movementCount > 0) {
+    return {
+      error: `Cannot delete product with existing stock movements (${movementCount} recorded). Set product status to INACTIVE instead.`,
+    };
+  }
+
+  // Safe to delete - audit log then delete stock and product in transaction
   await prisma.$transaction(async (tx) => {
+    await recordAuditLog({
+      tx,
+      userId: session.id,
+      action: "DELETE",
+      module: "Product Management",
+      entity: "Product",
+      recordId: productId,
+      recordIdentifier: `${product.sku} - ${product.name}`,
+      description: `Deleted product "${product.name}" (${product.sku})`,
+      previousValue: {
+        id: product.id,
+        sku: product.sku,
+        barcode: product.barcode,
+        name: product.name,
+        category: product.category.name,
+        costPrice: Number(product.costPrice),
+        sellingPrice: Number(product.sellingPrice),
+        unit: product.unit,
+        minimumStock: product.minimumStock,
+        refundable: product.refundable,
+        status: product.status,
+        image: product.image,
+      },
+      newValue: null,
+    });
+
     if (product.stock) {
       await tx.stock.delete({
         where: { productId },
@@ -346,7 +467,7 @@ export async function deleteProduct(productId: string) {
     await deleteProductImageFile(product.image);
   }
 
-  revalidatePath("/admin/products");
-  revalidatePath("/admin/stock");
+  safeRevalidatePath("/admin/products");
+  safeRevalidatePath("/admin/stock");
   return { success: true };
 }

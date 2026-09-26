@@ -9,6 +9,7 @@ import {
   ensureDefaultParameterSettings,
 } from "@/lib/parameter-settings";
 import { ParameterStatus } from "@prisma/client";
+import { recordAuditLog } from "@/lib/audit";
 
 /**
  * GET /api/admin/parameter-settings
@@ -91,15 +92,40 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const created = await prisma.parameterSetting.create({
-      data: {
-        code,
-        name,
-        value,
-        unit,
-        description,
-        status,
-      },
+    const created = await prisma.$transaction(async (tx) => {
+      const item = await tx.parameterSetting.create({
+        data: {
+          code,
+          name,
+          value,
+          unit,
+          description,
+          status,
+        },
+      });
+
+      await recordAuditLog({
+        tx,
+        userId: session.id,
+        action: "CREATE",
+        module: "Administration",
+        entity: "ParameterSetting",
+        recordId: item.id,
+        recordIdentifier: `${item.code} (${item.name})`,
+        description: `Created parameter setting "${item.code}"`,
+        previousValue: null,
+        newValue: {
+          id: item.id,
+          code: item.code,
+          name: item.name,
+          value: item.value,
+          unit: item.unit,
+          description: item.description,
+          status: item.status,
+        },
+      });
+
+      return item;
     });
 
     return NextResponse.json({ success: true, data: created }, { status: 201 });

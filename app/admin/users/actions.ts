@@ -5,7 +5,7 @@ import { getSession } from "@/lib/auth";
 import { requirePermission } from "@/lib/auth-guards";
 import { UserStatus } from "@prisma/client";
 import bcrypt from "bcrypt";
-import { revalidatePath } from "next/cache";
+import { safeRevalidatePath } from "@/lib/cache-utils";
 import {
   validateRoleChange,
   validateStatusChange,
@@ -14,6 +14,7 @@ import {
   isSuperAdminRole,
 } from "@/lib/super-admin-validator";
 import { isValidEmail } from "@/lib/validators";
+import { recordAuditLog } from "@/lib/audit";
 
 export async function createUser(formData: FormData) {
   const session = await requirePermission("USER_CREATE");
@@ -57,28 +58,56 @@ export async function createUser(formData: FormData) {
   // Hash password
   const hashedPassword = await bcrypt.hash(password, 10);
 
-  // Create user - ALWAYS ACTIVE for new users
-  const user = await prisma.user.create({
-    data: {
-      firstName,
-      lastName,
-      email,
-      password: hashedPassword,
-      status: "ACTIVE", // Force ACTIVE
-      inactiveFrom: null,
-      inactiveUntil: null,
-    },
+  const assignedRole = await prisma.role.findUnique({
+    where: { id: roleId },
+    select: { name: true },
   });
 
-  // Assign role
-  await prisma.userRole.create({
-    data: {
-      userId: user.id,
-      roleId,
-    },
+  await prisma.$transaction(async (tx) => {
+    // Create user - ALWAYS ACTIVE for new users
+    const user = await tx.user.create({
+      data: {
+        firstName,
+        lastName,
+        email,
+        password: hashedPassword,
+        status: "ACTIVE", // Force ACTIVE
+        inactiveFrom: null,
+        inactiveUntil: null,
+      },
+    });
+
+    // Assign role
+    await tx.userRole.create({
+      data: {
+        userId: user.id,
+        roleId,
+      },
+    });
+
+    await recordAuditLog({
+      tx,
+      userId: session.id,
+      action: "CREATE",
+      module: "Administration",
+      entity: "User",
+      recordId: user.id,
+      recordIdentifier: `${user.firstName} ${user.lastName} (${user.email})`,
+      description: `Created user "${user.firstName} ${user.lastName}" with role "${assignedRole?.name || roleId}"`,
+      previousValue: null,
+      newValue: {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        status: user.status,
+        role: assignedRole?.name || roleId,
+        password: "[REDACTED]",
+      },
+    });
   });
 
-  revalidatePath("/admin/users");
+  safeRevalidatePath("/admin/users");
   return { success: true };
 }
 
@@ -192,7 +221,7 @@ export async function updateUser(userId: string, formData: FormData) {
   // Use transaction for atomic update
   await prisma.$transaction(async (tx) => {
     // Update user
-    await tx.user.update({
+    const updatedUser = await tx.user.update({
       where: { id: userId },
       data: {
         firstName,
@@ -218,9 +247,42 @@ export async function updateUser(userId: string, formData: FormData) {
         roleId,
       },
     });
+
+    await recordAuditLog({
+      tx,
+      userId: session.id,
+      action: "UPDATE",
+      module: "Administration",
+      entity: "User",
+      recordId: userId,
+      recordIdentifier: `${updatedUser.firstName} ${updatedUser.lastName} (${updatedUser.email})`,
+      description: `Updated user "${updatedUser.firstName} ${updatedUser.lastName}"`,
+      previousValue: {
+        id: currentUser.id,
+        firstName: currentUser.firstName,
+        lastName: currentUser.lastName,
+        email: currentUser.email,
+        status: currentUser.status,
+        inactiveFrom: currentUser.inactiveFrom,
+        inactiveUntil: currentUser.inactiveUntil,
+        role: currentRoleName || null,
+        password: "[REDACTED]",
+      },
+      newValue: {
+        id: updatedUser.id,
+        firstName: updatedUser.firstName,
+        lastName: updatedUser.lastName,
+        email: updatedUser.email,
+        status: updatedUser.status,
+        inactiveFrom: updatedUser.inactiveFrom,
+        inactiveUntil: updatedUser.inactiveUntil,
+        role: newRoleName || roleId,
+        password: "[REDACTED]",
+      },
+    });
   });
 
-  revalidatePath("/admin/users");
+  safeRevalidatePath("/admin/users");
   return { success: true };
 }
 
@@ -248,12 +310,48 @@ export async function deleteUser(userId: string) {
     return { error: validation.error };
   }
 
-  // Delete user (cascade will delete userRoles)
-  await prisma.user.delete({
+  const existingUser = await prisma.user.findUnique({
     where: { id: userId },
+    include: {
+      userRoles: {
+        include: { role: true },
+      },
+    },
   });
 
-  revalidatePath("/admin/users");
+  if (!existingUser) {
+    return { error: "User not found" };
+  }
+
+  // Delete user (cascade will delete userRoles) in transaction with audit log
+  await prisma.$transaction(async (tx) => {
+    await recordAuditLog({
+      tx,
+      userId: session.id,
+      action: "DELETE",
+      module: "Administration",
+      entity: "User",
+      recordId: userId,
+      recordIdentifier: `${existingUser.firstName} ${existingUser.lastName} (${existingUser.email})`,
+      description: `Deleted user "${existingUser.firstName} ${existingUser.lastName}"`,
+      previousValue: {
+        id: existingUser.id,
+        firstName: existingUser.firstName,
+        lastName: existingUser.lastName,
+        email: existingUser.email,
+        status: existingUser.status,
+        roles: existingUser.userRoles.map((ur) => ur.role.name),
+        password: "[REDACTED]",
+      },
+      newValue: null,
+    });
+
+    await tx.user.delete({
+      where: { id: userId },
+    });
+  });
+
+  safeRevalidatePath("/admin/users");
   return { success: true };
 }
 
@@ -282,29 +380,70 @@ export async function toggleUserStatus(userId: string, newStatus: UserStatus) {
     }
   }
 
-  if (newStatus === "ACTIVE") {
-    // Reset inactive fields
-    await prisma.user.update({
-      where: { id: userId },
-      data: {
-        status: "ACTIVE",
-        inactiveFrom: null,
-        inactiveUntil: null,
-      },
-    });
-  } else {
-    // Set to permanent inactive
-    await prisma.user.update({
-      where: { id: userId },
-      data: {
-        status: "INACTIVE",
-        inactiveFrom: new Date(),
-        inactiveUntil: null,
-      },
-    });
+  const currentUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      status: true,
+      inactiveFrom: true,
+      inactiveUntil: true,
+    },
+  });
+
+  if (!currentUser) {
+    return { error: "User not found" };
   }
 
-  revalidatePath("/admin/users");
+  await prisma.$transaction(async (tx) => {
+    let updatedUser;
+    if (newStatus === "ACTIVE") {
+      // Reset inactive fields
+      updatedUser = await tx.user.update({
+        where: { id: userId },
+        data: {
+          status: "ACTIVE",
+          inactiveFrom: null,
+          inactiveUntil: null,
+        },
+      });
+    } else {
+      // Set to permanent inactive
+      updatedUser = await tx.user.update({
+        where: { id: userId },
+        data: {
+          status: "INACTIVE",
+          inactiveFrom: new Date(),
+          inactiveUntil: null,
+        },
+      });
+    }
+
+    await recordAuditLog({
+      tx,
+      userId: session.id,
+      action: "UPDATE",
+      module: "Administration",
+      entity: "User",
+      recordId: userId,
+      recordIdentifier: `${currentUser.firstName} ${currentUser.lastName} (${currentUser.email})`,
+      description: `Changed user status to ${newStatus} for "${currentUser.firstName} ${currentUser.lastName}"`,
+      previousValue: {
+        status: currentUser.status,
+        inactiveFrom: currentUser.inactiveFrom,
+        inactiveUntil: currentUser.inactiveUntil,
+      },
+      newValue: {
+        status: updatedUser.status,
+        inactiveFrom: updatedUser.inactiveFrom,
+        inactiveUntil: updatedUser.inactiveUntil,
+      },
+    });
+  });
+
+  safeRevalidatePath("/admin/users");
   return { success: true };
 }
 

@@ -1295,7 +1295,13 @@ export async function getCashCollectionReport(filter: DateFilter = {}) {
 // -------------------------------------------------------------
 
 export async function getUserActivityReport(
-  filter: DateFilter & { userId?: string; action?: string; search?: string } & PaginationParams = {}
+  filter: DateFilter & {
+    userId?: string;
+    action?: string;
+    module?: string;
+    entity?: string;
+    search?: string;
+  } & PaginationParams = {}
 ) {
   const page = Math.max(1, filter.page || 1);
   const pageSize = Math.max(1, Math.min(100, filter.pageSize || 10));
@@ -1306,10 +1312,17 @@ export async function getUserActivityReport(
     ...(dateRange ? { createdAt: dateRange } : {}),
     ...(filter.userId && filter.userId !== "ALL" ? { userId: filter.userId } : {}),
     ...(filter.action && filter.action !== "ALL" ? { action: filter.action } : {}),
+    ...(filter.module && filter.module !== "ALL" ? { module: filter.module } : {}),
+    ...(filter.entity && filter.entity !== "ALL" ? { entity: filter.entity } : {}),
     ...(filter.search?.trim()
       ? {
           OR: [
             { entity: { contains: filter.search.trim(), mode: "insensitive" } },
+            { module: { contains: filter.search.trim(), mode: "insensitive" } },
+            { description: { contains: filter.search.trim(), mode: "insensitive" } },
+            { recordIdentifier: { contains: filter.search.trim(), mode: "insensitive" } },
+            { recordId: { contains: filter.search.trim(), mode: "insensitive" } },
+            { username: { contains: filter.search.trim(), mode: "insensitive" } },
             { details: { contains: filter.search.trim(), mode: "insensitive" } },
             { action: { contains: filter.search.trim(), mode: "insensitive" } },
           ],
@@ -1334,15 +1347,42 @@ export async function getUserActivityReport(
   });
   const userMap = new Map(users.map((u) => [u.id, `${u.firstName} ${u.lastName} (${u.email})`]));
 
-  const items = logs.map((l) => ({
-    id: l.id,
-    userId: l.userId,
-    user: l.userId ? userMap.get(l.userId) || l.userId : "System",
-    action: l.action,
-    entity: l.entity,
-    details: l.details || "-",
-    date: l.createdAt.toISOString(),
-  }));
+  const items = logs.map((l) => {
+    const fallbackModule =
+      l.module ||
+      (["Category", "Product", "Stock"].includes(l.entity)
+        ? "Product Management"
+        : ["Supplier", "PurchaseOrder", "GoodsReceipt"].includes(l.entity)
+        ? "Purchasing"
+        : "Administration");
+
+    const resolvedUser = l.userId
+      ? userMap.get(l.userId) || l.username || l.userId
+      : l.username || "System";
+
+    return {
+      id: l.id,
+      timestamp: l.createdAt.toISOString(),
+      user: resolvedUser,
+      module: fallbackModule,
+      entity: l.entity,
+      action: l.action,
+      record: l.recordIdentifier || l.recordId || "-",
+      description: l.description || l.details || "-",
+      // Extended audit fields for detail modal
+      recordId: l.recordId || null,
+      recordIdentifier: l.recordIdentifier || null,
+      previousValue: l.previousValue ?? null,
+      newValue: l.newValue ?? null,
+      status: l.status || "SUCCESS",
+      ipAddress: l.ipAddress || null,
+      userAgent: l.userAgent || null,
+      details: l.details || null,
+      // Backward compatibility fields
+      userId: l.userId,
+      date: l.createdAt.toISOString(),
+    };
+  });
 
   return { total, page, pageSize, items };
 }
@@ -1461,5 +1501,8 @@ export async function getReportFilterOptions() {
     suppliers,
     cashiers: cashiers.map((c) => ({ id: c.id, name: `${c.firstName} ${c.lastName}` })),
     users: users.map((u) => ({ id: u.id, name: `${u.firstName} ${u.lastName} (${u.email})` })),
+    auditModules: ["Administration", "Product Management", "Purchasing"],
+    auditEntities: ["User", "Role", "Category", "Product", "Stock", "ParameterSetting", "SessionSetting", "Supplier", "Sale"],
+    auditActions: ["CREATE", "UPDATE", "DELETE", "TRANSACTION_REFUND"],
   };
 }

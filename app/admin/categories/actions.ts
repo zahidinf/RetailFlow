@@ -2,8 +2,9 @@
 
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth-guards";
-import { revalidatePath } from "next/cache";
+import { safeRevalidatePath } from "@/lib/cache-utils";
 import { Prisma } from "@prisma/client";
+import { recordAuditLog } from "@/lib/audit";
 
 export async function getCategories(search?: string, status?: string) {
   await requirePermission("CATEGORY_VIEW");
@@ -32,7 +33,7 @@ export async function getCategories(search?: string, status?: string) {
 }
 
 export async function createCategory(formData: FormData) {
-  await requirePermission("CATEGORY_CREATE");
+  const session = await requirePermission("CATEGORY_CREATE");
 
   const name = (formData.get("name") as string)?.trim();
   const description = (formData.get("description") as string)?.trim();
@@ -55,20 +56,40 @@ export async function createCategory(formData: FormData) {
     return { error: "A category with this name already exists" };
   }
 
-  await prisma.category.create({
-    data: {
-      name,
-      description: description || null,
-      status: status as "ACTIVE" | "INACTIVE",
-    },
+  await prisma.$transaction(async (tx) => {
+    const category = await tx.category.create({
+      data: {
+        name,
+        description: description || null,
+        status: status as "ACTIVE" | "INACTIVE",
+      },
+    });
+
+    await recordAuditLog({
+      tx,
+      userId: session.id,
+      action: "CREATE",
+      module: "Product Management",
+      entity: "Category",
+      recordId: category.id,
+      recordIdentifier: category.name,
+      description: `Created category "${category.name}"`,
+      previousValue: null,
+      newValue: {
+        id: category.id,
+        name: category.name,
+        description: category.description,
+        status: category.status,
+      },
+    });
   });
 
-  revalidatePath("/admin/categories");
+  safeRevalidatePath("/admin/categories");
   return { success: true };
 }
 
 export async function updateCategory(categoryId: string, formData: FormData) {
-  await requirePermission("CATEGORY_UPDATE");
+  const session = await requirePermission("CATEGORY_UPDATE");
 
   const name = (formData.get("name") as string)?.trim();
   const description = (formData.get("description") as string)?.trim();
@@ -104,21 +125,46 @@ export async function updateCategory(categoryId: string, formData: FormData) {
     }
   }
 
-  await prisma.category.update({
-    where: { id: categoryId },
-    data: {
-      name,
-      description: description === "" ? null : (description || null),
-      status: status as "ACTIVE" | "INACTIVE",
-    },
+  await prisma.$transaction(async (tx) => {
+    const updatedCategory = await tx.category.update({
+      where: { id: categoryId },
+      data: {
+        name,
+        description: description === "" ? null : (description || null),
+        status: status as "ACTIVE" | "INACTIVE",
+      },
+    });
+
+    await recordAuditLog({
+      tx,
+      userId: session.id,
+      action: "UPDATE",
+      module: "Product Management",
+      entity: "Category",
+      recordId: categoryId,
+      recordIdentifier: updatedCategory.name,
+      description: `Updated category "${updatedCategory.name}"`,
+      previousValue: {
+        id: existingCategory.id,
+        name: existingCategory.name,
+        description: existingCategory.description,
+        status: existingCategory.status,
+      },
+      newValue: {
+        id: updatedCategory.id,
+        name: updatedCategory.name,
+        description: updatedCategory.description,
+        status: updatedCategory.status,
+      },
+    });
   });
 
-  revalidatePath("/admin/categories");
+  safeRevalidatePath("/admin/categories");
   return { success: true };
 }
 
 export async function deleteCategory(categoryId: string) {
-  await requirePermission("CATEGORY_DELETE");
+  const session = await requirePermission("CATEGORY_DELETE");
 
   const category = await prisma.category.findUnique({
     where: { id: categoryId },
@@ -135,10 +181,30 @@ export async function deleteCategory(categoryId: string) {
     return { error: "Category cannot be deleted because it is currently assigned to one or more products." };
   }
 
-  await prisma.category.delete({
-    where: { id: categoryId },
+  await prisma.$transaction(async (tx) => {
+    await recordAuditLog({
+      tx,
+      userId: session.id,
+      action: "DELETE",
+      module: "Product Management",
+      entity: "Category",
+      recordId: categoryId,
+      recordIdentifier: category.name,
+      description: `Deleted category "${category.name}"`,
+      previousValue: {
+        id: category.id,
+        name: category.name,
+        description: category.description,
+        status: category.status,
+      },
+      newValue: null,
+    });
+
+    await tx.category.delete({
+      where: { id: categoryId },
+    });
   });
 
-  revalidatePath("/admin/categories");
+  safeRevalidatePath("/admin/categories");
   return { success: true };
 }

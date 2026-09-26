@@ -38,6 +38,7 @@ model User {
   createdPurchaseOrders PurchaseOrder[] @relation("CreatedPurchaseOrders")
   approvedPurchaseOrders PurchaseOrder[] @relation("ApprovedPurchaseOrders")
   receivedGoodsReceipts  GoodsReceipt[]  @relation("ReceivedGoodsReceipts")
+  auditLogs              AuditLog[]
 
   @@index([status])
   @@index([lastLoginAt])
@@ -113,15 +114,30 @@ model SystemSetting {
 }
 
 model AuditLog {
-  id        String   @id @default(cuid())
-  userId    String?
-  action    String
-  entity    String
-  details   String?
-  createdAt DateTime @default(now())
+  id               String   @id @default(cuid())
+  userId           String?
+  username         String?
+  action           String
+  module           String?
+  entity           String
+  recordId         String?
+  recordIdentifier String?
+  description      String?
+  previousValue    Json?
+  newValue         Json?
+  status           String?  @default("SUCCESS")
+  ipAddress        String?
+  userAgent        String?
+  details          String?
+  createdAt        DateTime @default(now())
+
+  user             User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([action])
   @@index([entity])
+  @@index([module])
+  @@index([userId])
+  @@index([recordId])
   @@index([createdAt])
 }
 

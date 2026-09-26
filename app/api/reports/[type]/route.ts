@@ -115,6 +115,8 @@ export async function GET(
   const productId = searchParams.get("productId") || undefined;
   const userId = searchParams.get("userId") || undefined;
   const action = searchParams.get("action") || undefined;
+  const auditModule = searchParams.get("module") || undefined;
+  const auditEntity = searchParams.get("entity") || undefined;
   const page = parseInt(searchParams.get("page") || "1", 10);
   const pageSize = parseInt(searchParams.get("pageSize") || "10", 10);
 
@@ -280,6 +282,8 @@ export async function GET(
           endDate,
           userId,
           action,
+          module: auditModule,
+          entity: auditEntity,
           search,
           page,
           pageSize,

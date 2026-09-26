@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { Prisma } from "@prisma/client";
+import { recordAuditLog } from "./audit";
 
 export const DEFAULT_MAX_ACTIVE_SESSIONS = 1;
 export const DEFAULT_IDLE_TIMEOUT_MINUTES = 30;
@@ -152,20 +153,24 @@ export async function updateSessionSettings(
     const now = new Date();
 
     if (current.maxActiveSessions !== maxActiveSessions) {
-      await tx.auditLog.create({
-        data: {
-          userId: adminUserId,
-          action: "UPDATE_SESSION_SETTING",
-          entity: SETTING_KEY_MAX_SESSIONS,
-          details: JSON.stringify({
-            setting: "Maximum Active Sessions",
-            previousValue: current.maxActiveSessions,
-            newValue: maxActiveSessions,
-            changedBy: adminUserId,
-            timestamp: now.toISOString(),
-          }),
-          createdAt: now,
-        },
+      await recordAuditLog({
+        tx,
+        userId: adminUserId,
+        action: "UPDATE",
+        module: "Administration",
+        entity: "SessionSetting",
+        recordId: SETTING_KEY_MAX_SESSIONS,
+        recordIdentifier: "Maximum Active Sessions",
+        description: `Updated Maximum Active Sessions from ${current.maxActiveSessions} to ${maxActiveSessions}`,
+        previousValue: { maxActiveSessions: current.maxActiveSessions },
+        newValue: { maxActiveSessions },
+        details: JSON.stringify({
+          setting: "Maximum Active Sessions",
+          previousValue: current.maxActiveSessions,
+          newValue: maxActiveSessions,
+          changedBy: adminUserId,
+          timestamp: now.toISOString(),
+        }),
       });
 
       // Reconcile existing sessions if limit lowered
@@ -175,20 +180,24 @@ export async function updateSessionSettings(
     }
 
     if (current.idleTimeoutMinutes !== idleTimeoutMinutes) {
-      await tx.auditLog.create({
-        data: {
-          userId: adminUserId,
-          action: "UPDATE_SESSION_SETTING",
-          entity: SETTING_KEY_IDLE_TIMEOUT,
-          details: JSON.stringify({
-            setting: "Session Idle Timeout",
-            previousValue: current.idleTimeoutMinutes,
-            newValue: idleTimeoutMinutes,
-            changedBy: adminUserId,
-            timestamp: now.toISOString(),
-          }),
-          createdAt: now,
-        },
+      await recordAuditLog({
+        tx,
+        userId: adminUserId,
+        action: "UPDATE",
+        module: "Administration",
+        entity: "SessionSetting",
+        recordId: SETTING_KEY_IDLE_TIMEOUT,
+        recordIdentifier: "Session Idle Timeout",
+        description: `Updated Session Idle Timeout from ${current.idleTimeoutMinutes}m to ${idleTimeoutMinutes}m`,
+        previousValue: { idleTimeoutMinutes: current.idleTimeoutMinutes },
+        newValue: { idleTimeoutMinutes },
+        details: JSON.stringify({
+          setting: "Session Idle Timeout",
+          previousValue: current.idleTimeoutMinutes,
+          newValue: idleTimeoutMinutes,
+          changedBy: adminUserId,
+          timestamp: now.toISOString(),
+        }),
       });
     }
 
