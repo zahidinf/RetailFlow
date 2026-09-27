@@ -13,10 +13,24 @@ export class SalesAuthorizationError extends Error {
 export interface CreateSaleItemInput {
   productId: string;
   quantity: number;
+  discount?: number;
+  unitPrice?: number;
+  isFreeReward?: boolean;
+  promotionId?: string;
+}
+
+export interface AppliedPromotionInput {
+  promotionId: string;
+  promotionCode: string;
+  promotionName: string;
+  promotionType: string;
+  discountAmount: number;
+  details?: Record<string, any>;
 }
 
 export interface CreateSaleInput {
   items: CreateSaleItemInput[];
+  appliedPromotions?: AppliedPromotionInput[];
   paymentMethod?: string;
   paymentReceived?: number;
   change?: number;
@@ -73,6 +87,9 @@ export async function createSaleTransaction(input: CreateSaleInput) {
       quantity: number;
       unitPrice: Prisma.Decimal;
       totalPrice: Prisma.Decimal;
+      discount: Prisma.Decimal;
+      isFreeReward: boolean;
+      promotionId?: string | null;
     }[] = [];
 
     const stockDeductions: {
@@ -103,16 +120,30 @@ export async function createSaleTransaction(input: CreateSaleInput) {
         );
       }
 
-      const itemTotal = product.sellingPrice.mul(item.quantity);
-      totalAmount = totalAmount.add(itemTotal);
+      // Unit price: either special promotional price or master selling price
+      const effectiveUnitPrice = item.unitPrice !== undefined ? new Prisma.Decimal(item.unitPrice) : product.sellingPrice;
+      const discount = item.discount !== undefined ? new Prisma.Decimal(item.discount) : new Prisma.Decimal(0);
+      const isFreeReward = Boolean(item.isFreeReward);
+
+      // If item is completely free reward, line total is 0
+      const itemTotal = isFreeReward
+        ? new Prisma.Decimal(0)
+        : effectiveUnitPrice.mul(item.quantity).sub(discount);
+
+      const finalLineTotal = itemTotal.greaterThan(0) ? itemTotal : new Prisma.Decimal(0);
+      totalAmount = totalAmount.add(finalLineTotal);
 
       saleItemsData.push({
         productId: product.id,
         quantity: item.quantity,
-        unitPrice: product.sellingPrice,
-        totalPrice: itemTotal,
+        unitPrice: effectiveUnitPrice,
+        totalPrice: finalLineTotal,
+        discount,
+        isFreeReward,
+        promotionId: item.promotionId || null,
       });
 
+      // Crucial: Physical inventory deduction applies to ALL items including free rewards!
       stockDeductions.push({
         productId: product.id,
         quantity: item.quantity,
@@ -143,6 +174,16 @@ export async function createSaleTransaction(input: CreateSaleInput) {
       changeDecimal = new Prisma.Decimal(calculatedChange);
     }
 
+    // Prepare promotions records if any
+    const promotionsCreateData = (input.appliedPromotions || []).map((p) => ({
+      promotionId: p.promotionId,
+      promotionCode: p.promotionCode,
+      promotionName: p.promotionName,
+      promotionType: p.promotionType,
+      discountAmount: new Prisma.Decimal(p.discountAmount || 0),
+      details: p.details ? JSON.parse(JSON.stringify(p.details)) : undefined,
+    }));
+
     // Create Sale record strictly with session.id as cashierId
     const sale = await tx.sale.create({
       data: {
@@ -155,6 +196,9 @@ export async function createSaleTransaction(input: CreateSaleInput) {
         status: "COMPLETED",
         items: {
           create: saleItemsData,
+        },
+        promotions: {
+          create: promotionsCreateData,
         },
       },
       include: {
@@ -170,6 +214,7 @@ export async function createSaleTransaction(input: CreateSaleInput) {
             },
           },
         },
+        promotions: true,
         cashier: {
           select: {
             id: true,
@@ -214,6 +259,11 @@ export async function createSaleTransaction(input: CreateSaleInput) {
         ...i,
         unitPrice: Number(i.unitPrice),
         totalPrice: Number(i.totalPrice),
+        discount: Number(i.discount),
+      })),
+      promotions: (sale.promotions || []).map((p) => ({
+        ...p,
+        discountAmount: Number(p.discountAmount),
       })),
     };
   });

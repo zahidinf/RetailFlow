@@ -6,6 +6,7 @@ import Footer from "@/app/components/Footer";
 import PosTerminal from "./components/PosTerminal";
 import { PermissionProvider } from "@/app/components/PermissionProvider";
 import { prisma } from "@/lib/prisma";
+import { getActivePromotionsForPos } from "@/lib/promotions";
 
 export const metadata = {
   title: "Point of Sale (POS) - RetailFlow",
@@ -69,6 +70,34 @@ export default async function PosPage() {
     image: p.image,
   }));
 
+  // Fetch active promotions
+  let initialPromotions: any[] = [];
+  try {
+    const rawPromos = await getActivePromotionsForPos();
+    initialPromotions = rawPromos.map((p) => ({
+      ...p,
+      minCartSubtotal: p.minCartSubtotal ? Number(p.minCartSubtotal) : null,
+      specialPrice: p.specialPrice ? Number(p.specialPrice) : null,
+      discountValue: p.discountValue ? Number(p.discountValue) : null,
+      buyProduct: p.buyProduct
+        ? {
+            ...p.buyProduct,
+            sellingPrice: Number(p.buyProduct.sellingPrice),
+            currentStock: p.buyProduct.stock?.currentStock ?? 0,
+          }
+        : null,
+      rewardProduct: p.rewardProduct
+        ? {
+            ...p.rewardProduct,
+            sellingPrice: Number(p.rewardProduct.sellingPrice),
+            currentStock: p.rewardProduct.stock?.currentStock ?? 0,
+          }
+        : null,
+    }));
+  } catch {
+    // If cashier doesn't have promo view permission yet, graceful fallback
+  }
+
   return (
     <PermissionProvider permissions={session.permissions} isSuperAdmin={session.isSuperAdmin}>
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col transition-colors">
@@ -86,7 +115,10 @@ export default async function PosPage() {
             </div>
           </div>
 
-          <PosTerminal products={formattedProducts} />
+          <PosTerminal
+            products={formattedProducts}
+            initialPromotions={initialPromotions}
+          />
         </main>
 
         <Footer />

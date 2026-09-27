@@ -816,3 +816,1041 @@ export async function getInventoryStaffDashboardData(): Promise<InventoryStaffDa
     needsAttention,
   };
 }
+
+// ========================================================
+// 4. SUPER ADMIN DASHBOARD
+// ========================================================
+export interface SuperAdminDashboardData {
+  totalSalesToday: number;
+  salesThisMonth: number;
+  totalOrders: number;
+  totalProducts: number;
+  lowStockProducts: number;
+  outstandingPOs: number;
+  activeUsers: number;
+  systemAlertsCount: number;
+  salesPerformance: Array<{ label: string; value: number }>;
+  salesByCategory: Array<{ label: string; value: number }>;
+  salesByPaymentMethod: Array<{ label: string; value: number }>;
+  inventoryOverview: {
+    inStock: number;
+    lowStock: number;
+    outOfStock: number;
+  };
+  recentTransactions: Array<{
+    id: string;
+    saleNumber: string;
+    cashierName: string;
+    totalAmount: number;
+    paymentMethod: string;
+    status: string;
+    createdAt: Date;
+  }>;
+  recentUserActivity: Array<{
+    id: string;
+    name: string;
+    email: string;
+    roleName: string;
+    status: string;
+    lastLoginAt: Date | null;
+  }>;
+  recentAuditActivity: Array<{
+    id: string;
+    user: string;
+    action: string;
+    module: string;
+    entity: string;
+    record: string;
+    createdAt: Date;
+  }>;
+  pendingApprovals: {
+    pendingPOs: Array<{
+      id: string;
+      poNumber: string;
+      supplier: string;
+      totalAmount: number;
+      createdAt: Date;
+    }>;
+  };
+  lowStockAlerts: Array<{
+    id: string;
+    name: string;
+    sku: string;
+    currentStock: number;
+    minimumStock: number;
+  }>;
+}
+
+export async function getSuperAdminDashboardData(period: string = "today"): Promise<SuperAdminDashboardData> {
+  const { startOfToday, endOfToday } = getTodayBounds();
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+
+  // Determine period bounds for sales performance chart
+  let perfStart = startOfToday;
+  if (period === "7d") {
+    perfStart = new Date(startOfToday.getTime() - 6 * 24 * 60 * 60 * 1000);
+  } else if (period === "30d") {
+    perfStart = new Date(startOfToday.getTime() - 29 * 24 * 60 * 60 * 1000);
+  } else if (period === "12m") {
+    perfStart = new Date(now.getFullYear(), now.getMonth() - 11, 1, 0, 0, 0, 0);
+  }
+
+  const [
+    salesTodayAgg,
+    salesMonthAgg,
+    totalOrdersCount,
+    totalProductsCount,
+    stockCounts,
+    outstandingPOCount,
+    activeUsersCount,
+    pendingPOsList,
+    categorySalesRaw,
+    paymentMethodRaw,
+    recentSalesRaw,
+    recentUsersRaw,
+    recentAuditRaw,
+    lowStockItemsRaw,
+    perfSalesRaw,
+  ] = await Promise.all([
+    prisma.sale.aggregate({
+      where: {
+        createdAt: { gte: startOfToday, lte: endOfToday },
+        status: { in: ["COMPLETED", "PARTIAL_REFUNDED"] },
+      },
+      _sum: { totalAmount: true },
+    }),
+    prisma.sale.aggregate({
+      where: {
+        createdAt: { gte: startOfMonth },
+        status: { in: ["COMPLETED", "PARTIAL_REFUNDED"] },
+      },
+      _sum: { totalAmount: true },
+    }),
+    prisma.sale.count({
+      where: { status: { in: ["COMPLETED", "PARTIAL_REFUNDED"] } },
+    }),
+    prisma.product.count({ where: { status: "ACTIVE" } }),
+    prisma.$queryRaw<Array<{ in_stock: bigint; low_stock: bigint; out_of_stock: bigint }>>`
+      SELECT 
+        COUNT(CASE WHEN s."currentStock" > p."minimumStock" THEN 1 END) as in_stock,
+        COUNT(CASE WHEN s."currentStock" > 0 AND s."currentStock" <= p."minimumStock" THEN 1 END) as low_stock,
+        COUNT(CASE WHEN s."currentStock" <= 0 THEN 1 END) as out_of_stock
+      FROM "Stock" s
+      JOIN "Product" p ON s."productId" = p."id"
+      WHERE p."status" = 'ACTIVE'
+    `,
+    prisma.purchaseOrder.count({
+      where: { status: { in: ["SUBMITTED", "APPROVED", "PARTIALLY_RECEIVED"] } },
+    }),
+    prisma.user.count({ where: { status: "ACTIVE" } }),
+    prisma.purchaseOrder.findMany({
+      where: { status: "SUBMITTED" },
+      take: 5,
+      orderBy: { createdAt: "desc" },
+      include: { supplier: { select: { name: true } } },
+    }),
+    prisma.$queryRaw<Array<{ name: string; amount: number }>>`
+      SELECT c."name" as name, COALESCE(SUM(si."totalPrice"), 0)::float as amount
+      FROM "SaleItem" si
+      JOIN "Sale" s ON si."saleId" = s."id"
+      JOIN "Product" p ON si."productId" = p."id"
+      JOIN "Category" c ON p."categoryId" = c."id"
+      WHERE s."status" IN ('COMPLETED', 'PARTIAL_REFUNDED')
+      GROUP BY c."name"
+      ORDER BY amount DESC
+      LIMIT 5
+    `,
+    prisma.sale.groupBy({
+      by: ["paymentMethod"],
+      where: { status: { in: ["COMPLETED", "PARTIAL_REFUNDED"] } },
+      _sum: { totalAmount: true },
+    }),
+    prisma.sale.findMany({
+      take: 6,
+      orderBy: { createdAt: "desc" },
+      include: { cashier: { select: { firstName: true, lastName: true } } },
+    }),
+    prisma.user.findMany({
+      take: 5,
+      orderBy: [{ lastLoginAt: "desc" }, { createdAt: "desc" }],
+      include: { userRoles: { include: { role: true } } },
+    }),
+    prisma.auditLog.findMany({
+      take: 6,
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.$queryRaw<Array<{ id: string; name: string; sku: string; current_stock: number; minimum_stock: number }>>`
+      SELECT p."id", p."name", p."sku", s."currentStock" as current_stock, p."minimumStock" as minimum_stock
+      FROM "Product" p
+      JOIN "Stock" s ON s."productId" = p."id"
+      WHERE p."status" = 'ACTIVE' AND s."currentStock" <= p."minimumStock"
+      ORDER BY s."currentStock" ASC
+      LIMIT 5
+    `,
+    prisma.sale.findMany({
+      where: {
+        createdAt: { gte: perfStart },
+        status: { in: ["COMPLETED", "PARTIAL_REFUNDED"] },
+      },
+      select: { createdAt: true, totalAmount: true },
+    }),
+  ]);
+
+  // Performance chart points
+  let salesPerformance: Array<{ label: string; value: number }> = [];
+  if (period === "12m") {
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const monthMap = new Map<string, number>();
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const k = `${monthNames[d.getMonth()]} ${d.getFullYear().toString().slice(2)}`;
+      monthMap.set(k, 0);
+    }
+    for (const s of perfSalesRaw) {
+      const d = new Date(s.createdAt);
+      const k = `${monthNames[d.getMonth()]} ${d.getFullYear().toString().slice(2)}`;
+      if (monthMap.has(k)) {
+        monthMap.set(k, (monthMap.get(k) || 0) + Number(s.totalAmount));
+      }
+    }
+    salesPerformance = Array.from(monthMap.entries()).map(([label, value]) => ({ label, value }));
+  } else if (period === "7d" || period === "30d") {
+    const count = period === "7d" ? 7 : 30;
+    const dayMap = new Map<string, number>();
+    for (let i = count - 1; i >= 0; i--) {
+      const d = new Date(startOfToday.getTime() - i * 24 * 60 * 60 * 1000);
+      const k = `${d.getMonth() + 1}/${d.getDate()}`;
+      dayMap.set(k, 0);
+    }
+    for (const s of perfSalesRaw) {
+      const d = new Date(s.createdAt);
+      const k = `${d.getMonth() + 1}/${d.getDate()}`;
+      if (dayMap.has(k)) {
+        dayMap.set(k, (dayMap.get(k) || 0) + Number(s.totalAmount));
+      }
+    }
+    salesPerformance = Array.from(dayMap.entries()).map(([label, value]) => ({ label, value }));
+  } else {
+    // Today hourly
+    const hourMap = new Map<number, number>();
+    for (let h = 8; h <= 21; h++) hourMap.set(h, 0);
+    for (const s of perfSalesRaw) {
+      const h = new Date(s.createdAt).getHours();
+      if (hourMap.has(h)) hourMap.set(h, (hourMap.get(h) || 0) + Number(s.totalAmount));
+    }
+    salesPerformance = Array.from(hourMap.entries()).map(([h, val]) => ({
+      label: `${h.toString().padStart(2, "0")}:00`,
+      value: val,
+    }));
+  }
+
+  const inStock = stockCounts[0] ? Number(stockCounts[0].in_stock) : 0;
+  const lowStock = stockCounts[0] ? Number(stockCounts[0].low_stock) : 0;
+  const outOfStock = stockCounts[0] ? Number(stockCounts[0].out_of_stock) : 0;
+
+  return {
+    totalSalesToday: Number(salesTodayAgg._sum.totalAmount || 0),
+    salesThisMonth: Number(salesMonthAgg._sum.totalAmount || 0),
+    totalOrders: totalOrdersCount,
+    totalProducts: totalProductsCount,
+    lowStockProducts: lowStock + outOfStock,
+    outstandingPOs: outstandingPOCount,
+    activeUsers: activeUsersCount,
+    systemAlertsCount: (lowStock + outOfStock > 0 ? 1 : 0) + (pendingPOsList.length > 0 ? 1 : 0),
+    salesPerformance,
+    salesByCategory: categorySalesRaw.map((c) => ({ label: c.name, value: Number(c.amount) })),
+    salesByPaymentMethod: paymentMethodRaw.map((p) => ({
+      label: p.paymentMethod,
+      value: Number(p._sum.totalAmount || 0),
+    })),
+    inventoryOverview: { inStock, lowStock, outOfStock },
+    recentTransactions: recentSalesRaw.map((s) => ({
+      id: s.id,
+      saleNumber: s.saleNumber,
+      cashierName: s.cashier ? `${s.cashier.firstName} ${s.cashier.lastName}` : "Cashier",
+      totalAmount: Number(s.totalAmount),
+      paymentMethod: s.paymentMethod,
+      status: s.status,
+      createdAt: s.createdAt,
+    })),
+    recentUserActivity: recentUsersRaw.map((u) => ({
+      id: u.id,
+      name: `${u.firstName} ${u.lastName}`,
+      email: u.email,
+      roleName: u.userRoles[0]?.role?.name || "User",
+      status: u.status,
+      lastLoginAt: u.lastLoginAt,
+    })),
+    recentAuditActivity: recentAuditRaw.map((a) => ({
+      id: a.id,
+      user: a.username || "System",
+      action: a.action,
+      module: a.module || "General",
+      entity: a.entity,
+      record: a.recordIdentifier || a.recordId || "-",
+      createdAt: a.createdAt,
+    })),
+    pendingApprovals: {
+      pendingPOs: pendingPOsList.map((po) => ({
+        id: po.id,
+        poNumber: po.poNumber,
+        supplier: po.supplier?.name || "Supplier",
+        totalAmount: Number(po.totalAmount),
+        createdAt: po.createdAt,
+      })),
+    },
+    lowStockAlerts: lowStockItemsRaw.map((p) => ({
+      id: p.id,
+      name: p.name,
+      sku: p.sku,
+      currentStock: p.current_stock,
+      minimumStock: p.minimum_stock,
+    })),
+  };
+}
+
+// ========================================================
+// 5. ADMIN DASHBOARD
+// ========================================================
+export interface AdminDashboardData {
+  totalUsers: number;
+  activeUsers: number;
+  totalRoles: number;
+  totalPermissions: number;
+  totalProducts: number;
+  systemNotificationsCount: number;
+  userActivityTrend: Array<{ label: string; value: number }>;
+  usersByRole: Array<{ label: string; value: number }>;
+  activityByModule: Array<{ label: string; value: number }>;
+  auditByAction: Array<{ label: string; value: number }>;
+  recentUserActivity: Array<{
+    id: string;
+    name: string;
+    email: string;
+    roleName: string;
+    status: string;
+    lastLoginAt: Date | null;
+  }>;
+  recentAuditActivity: Array<{
+    id: string;
+    user: string;
+    action: string;
+    module: string;
+    entity: string;
+    record: string;
+    status: string;
+    createdAt: Date;
+  }>;
+}
+
+export async function getAdminDashboardData(): Promise<AdminDashboardData> {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  const [
+    totalUsers,
+    activeUsers,
+    totalRoles,
+    totalPermissions,
+    totalProducts,
+    allRolesWithCount,
+    recentUsers,
+    recentAudits,
+    auditByActionRaw,
+    auditByModuleRaw,
+  ] = await Promise.all([
+    prisma.user.count(),
+    prisma.user.count({ where: { status: "ACTIVE" } }),
+    prisma.role.count(),
+    prisma.permission.count(),
+    prisma.product.count({ where: { status: "ACTIVE" } }),
+    prisma.role.findMany({
+      select: { name: true, _count: { select: { userRoles: true } } },
+      orderBy: { userRoles: { _count: "desc" } },
+    }),
+    prisma.user.findMany({
+      take: 6,
+      orderBy: [{ lastLoginAt: "desc" }, { createdAt: "desc" }],
+      include: { userRoles: { include: { role: true } } },
+    }),
+    prisma.auditLog.findMany({
+      take: 6,
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.auditLog.groupBy({
+      by: ["action"],
+      _count: { id: true },
+      orderBy: { _count: { id: "desc" } },
+      take: 5,
+    }),
+    prisma.auditLog.groupBy({
+      by: ["module"],
+      _count: { id: true },
+      orderBy: { _count: { id: "desc" } },
+      take: 5,
+    }),
+  ]);
+
+  // User activity trend over last 7 days from audit logs
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const dayMap = new Map<string, number>();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+    dayMap.set(dayNames[d.getDay()], 0);
+  }
+
+  const recent7DaysAudits = await prisma.auditLog.findMany({
+    where: { createdAt: { gte: sevenDaysAgo } },
+    select: { createdAt: true },
+  });
+  for (const a of recent7DaysAudits) {
+    const dName = dayNames[new Date(a.createdAt).getDay()];
+    if (dayMap.has(dName)) dayMap.set(dName, (dayMap.get(dName) || 0) + 1);
+  }
+
+  return {
+    totalUsers,
+    activeUsers,
+    totalRoles,
+    totalPermissions,
+    totalProducts,
+    systemNotificationsCount: totalUsers - activeUsers > 0 ? 1 : 0,
+    userActivityTrend: Array.from(dayMap.entries()).map(([label, value]) => ({ label, value })),
+    usersByRole: allRolesWithCount.map((r) => ({ label: r.name, value: r._count.userRoles })),
+    activityByModule: auditByModuleRaw.map((m) => ({
+      label: m.module || "General",
+      value: m._count.id,
+    })),
+    auditByAction: auditByActionRaw.map((a) => ({ label: a.action, value: a._count.id })),
+    recentUserActivity: recentUsers.map((u) => ({
+      id: u.id,
+      name: `${u.firstName} ${u.lastName}`,
+      email: u.email,
+      roleName: u.userRoles[0]?.role?.name || "User",
+      status: u.status,
+      lastLoginAt: u.lastLoginAt,
+    })),
+    recentAuditActivity: recentAudits.map((a) => ({
+      id: a.id,
+      user: a.username || "System",
+      action: a.action,
+      module: a.module || "General",
+      entity: a.entity,
+      record: a.recordIdentifier || a.recordId || "-",
+      status: a.status || "SUCCESS",
+      createdAt: a.createdAt,
+    })),
+  };
+}
+
+// ========================================================
+// 6. ACCOUNTANT DASHBOARD
+// ========================================================
+export interface AccountantDashboardData {
+  todaySales: number;
+  monthlySales: number;
+  totalTransactions: number;
+  avgTransactionValue: number;
+  taxCollected: number;
+  refundAmount: number;
+  salesTrend: Array<{ label: string; value: number }>;
+  salesByPaymentMethod: Array<{ label: string; value: number }>;
+  revenueByCategory: Array<{ label: string; value: number }>;
+  taxSummary: {
+    grossSales: number;
+    preTaxAmount: number;
+    taxAmount: number;
+  };
+  recentTransactions: Array<{
+    id: string;
+    saleNumber: string;
+    totalAmount: number;
+    paymentMethod: string;
+    status: string;
+    createdAt: Date;
+  }>;
+  recentRefunds: Array<{
+    id: string;
+    refundNumber: string;
+    saleNumber: string;
+    totalAmount: number;
+    reason: string | null;
+    createdAt: Date;
+  }>;
+}
+
+export async function getAccountantDashboardData(period: string = "today"): Promise<AccountantDashboardData> {
+  const { startOfToday, endOfToday } = getTodayBounds();
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+
+  let dateFilterGte = startOfToday;
+  if (period === "yesterday") {
+    dateFilterGte = new Date(startOfToday.getTime() - 24 * 60 * 60 * 1000);
+  } else if (period === "7d") {
+    dateFilterGte = new Date(startOfToday.getTime() - 6 * 24 * 60 * 60 * 1000);
+  } else if (period === "30d") {
+    dateFilterGte = new Date(startOfToday.getTime() - 29 * 24 * 60 * 60 * 1000);
+  } else if (period === "month") {
+    dateFilterGte = startOfMonth;
+  }
+
+  const [
+    todaySalesAgg,
+    monthSalesAgg,
+    filteredSalesAgg,
+    refundsAgg,
+    paymentMethodRaw,
+    categorySalesRaw,
+    recentSalesRaw,
+    recentRefundsRaw,
+    trendSalesRaw,
+  ] = await Promise.all([
+    prisma.sale.aggregate({
+      where: {
+        createdAt: { gte: startOfToday, lte: endOfToday },
+        status: { in: ["COMPLETED", "PARTIAL_REFUNDED"] },
+      },
+      _sum: { totalAmount: true },
+    }),
+    prisma.sale.aggregate({
+      where: {
+        createdAt: { gte: startOfMonth },
+        status: { in: ["COMPLETED", "PARTIAL_REFUNDED"] },
+      },
+      _sum: { totalAmount: true },
+    }),
+    prisma.sale.aggregate({
+      where: {
+        createdAt: { gte: dateFilterGte },
+        status: { in: ["COMPLETED", "PARTIAL_REFUNDED"] },
+      },
+      _sum: { totalAmount: true },
+      _count: { id: true },
+      _avg: { totalAmount: true },
+    }),
+    prisma.refund.aggregate({
+      where: { createdAt: { gte: dateFilterGte } },
+      _sum: { totalAmount: true },
+    }),
+    prisma.sale.groupBy({
+      by: ["paymentMethod"],
+      where: {
+        createdAt: { gte: dateFilterGte },
+        status: { in: ["COMPLETED", "PARTIAL_REFUNDED"] },
+      },
+      _sum: { totalAmount: true },
+    }),
+    prisma.$queryRaw<Array<{ name: string; amount: number }>>`
+      SELECT c."name" as name, COALESCE(SUM(si."totalPrice"), 0)::float as amount
+      FROM "SaleItem" si
+      JOIN "Sale" s ON si."saleId" = s."id"
+      JOIN "Product" p ON si."productId" = p."id"
+      JOIN "Category" c ON p."categoryId" = c."id"
+      WHERE s."status" IN ('COMPLETED', 'PARTIAL_REFUNDED')
+      GROUP BY c."name"
+      ORDER BY amount DESC
+      LIMIT 6
+    `,
+    prisma.sale.findMany({
+      take: 6,
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.refund.findMany({
+      take: 6,
+      orderBy: { createdAt: "desc" },
+      include: { sale: { select: { saleNumber: true } } },
+    }),
+    prisma.sale.findMany({
+      where: {
+        createdAt: { gte: dateFilterGte },
+        status: { in: ["COMPLETED", "PARTIAL_REFUNDED"] },
+      },
+      select: { createdAt: true, totalAmount: true },
+    }),
+  ]);
+
+  const grossSales = Number(filteredSalesAgg._sum.totalAmount || 0);
+  const refundAmount = Number(refundsAgg._sum.totalAmount || 0);
+  const netSales = Math.max(0, grossSales - refundAmount);
+
+  // Exact centralized reverse tax logic: PPN 11% inclusive
+  const preTaxAmount = Math.round(netSales / 1.11);
+  const taxAmount = netSales - preTaxAmount;
+
+  // Trend points
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const dayMap = new Map<string, number>();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(startOfToday.getTime() - i * 24 * 60 * 60 * 1000);
+    dayMap.set(dayNames[d.getDay()], 0);
+  }
+  for (const s of trendSalesRaw) {
+    const d = new Date(s.createdAt);
+    const dName = dayNames[d.getDay()];
+    if (dayMap.has(dName)) dayMap.set(dName, (dayMap.get(dName) || 0) + Number(s.totalAmount));
+  }
+
+  return {
+    todaySales: Number(todaySalesAgg._sum.totalAmount || 0),
+    monthlySales: Number(monthSalesAgg._sum.totalAmount || 0),
+    totalTransactions: filteredSalesAgg._count.id,
+    avgTransactionValue: Math.round(Number(filteredSalesAgg._avg.totalAmount || 0)),
+    taxCollected: taxAmount,
+    refundAmount,
+    salesTrend: Array.from(dayMap.entries()).map(([label, value]) => ({ label, value })),
+    salesByPaymentMethod: paymentMethodRaw.map((p) => ({
+      label: p.paymentMethod,
+      value: Number(p._sum.totalAmount || 0),
+    })),
+    revenueByCategory: categorySalesRaw.map((c) => ({ label: c.name, value: Number(c.amount) })),
+    taxSummary: {
+      grossSales,
+      preTaxAmount,
+      taxAmount,
+    },
+    recentTransactions: recentSalesRaw.map((s) => ({
+      id: s.id,
+      saleNumber: s.saleNumber,
+      totalAmount: Number(s.totalAmount),
+      paymentMethod: s.paymentMethod,
+      status: s.status,
+      createdAt: s.createdAt,
+    })),
+    recentRefunds: recentRefundsRaw.map((r) => ({
+      id: r.id,
+      refundNumber: r.refundNumber,
+      saleNumber: r.sale.saleNumber,
+      totalAmount: Number(r.totalAmount),
+      reason: r.reason,
+      createdAt: r.createdAt,
+    })),
+  };
+}
+
+// ========================================================
+// 7. AUDITOR DASHBOARD
+// ========================================================
+export interface AuditorDashboardData {
+  totalAuditEvents: number;
+  createActions: number;
+  updateActions: number;
+  deleteActions: number;
+  loginEvents: number;
+  failedEvents: number;
+  auditActivityTrend: Array<{ label: string; value: number }>;
+  activityByModule: Array<{ label: string; value: number }>;
+  activityByAction: Array<{ label: string; value: number }>;
+  recentAuditActivity: Array<{
+    id: string;
+    timestamp: Date;
+    user: string;
+    action: string;
+    module: string;
+    entity: string;
+    record: string;
+    description: string;
+    status: string;
+    previousValue: unknown;
+    newValue: unknown;
+  }>;
+  sensitiveActivity: Array<{
+    id: string;
+    timestamp: Date;
+    user: string;
+    action: string;
+    entity: string;
+    record: string;
+    description: string;
+  }>;
+}
+
+export async function getAuditorDashboardData(): Promise<AuditorDashboardData> {
+  const [
+    totalAuditEvents,
+    createActions,
+    updateActions,
+    deleteActions,
+    loginEvents,
+    failedEvents,
+    activityByActionRaw,
+    activityByModuleRaw,
+    recentAuditRaw,
+    sensitiveAuditRaw,
+  ] = await Promise.all([
+    prisma.auditLog.count(),
+    prisma.auditLog.count({ where: { action: "CREATE" } }),
+    prisma.auditLog.count({ where: { action: "UPDATE" } }),
+    prisma.auditLog.count({ where: { action: "DELETE" } }),
+    prisma.auditLog.count({ where: { action: { in: ["LOGIN", "AUTHENTICATE"] } } }),
+    prisma.auditLog.count({ where: { status: "FAILED" } }),
+    prisma.auditLog.groupBy({
+      by: ["action"],
+      _count: { id: true },
+      orderBy: { _count: { id: "desc" } },
+      take: 6,
+    }),
+    prisma.auditLog.groupBy({
+      by: ["module"],
+      _count: { id: true },
+      orderBy: { _count: { id: "desc" } },
+      take: 6,
+    }),
+    prisma.auditLog.findMany({
+      take: 8,
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.auditLog.findMany({
+      where: {
+        OR: [
+          { action: "DELETE" },
+          { entity: { in: ["User", "Role", "RolePermission", "ParameterSetting"] } },
+          { status: "FAILED" },
+        ],
+      },
+      take: 6,
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
+
+  // 7-day trend
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const dayMap = new Map<string, number>();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+    dayMap.set(dayNames[d.getDay()], 0);
+  }
+
+  const logsLast7Days = await prisma.auditLog.findMany({
+    where: { createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } },
+    select: { createdAt: true },
+  });
+  for (const l of logsLast7Days) {
+    const d = dayNames[new Date(l.createdAt).getDay()];
+    if (dayMap.has(d)) dayMap.set(d, (dayMap.get(d) || 0) + 1);
+  }
+
+  return {
+    totalAuditEvents,
+    createActions,
+    updateActions,
+    deleteActions,
+    loginEvents,
+    failedEvents,
+    auditActivityTrend: Array.from(dayMap.entries()).map(([label, value]) => ({ label, value })),
+    activityByModule: activityByModuleRaw.map((m) => ({
+      label: m.module || "General",
+      value: m._count.id,
+    })),
+    activityByAction: activityByActionRaw.map((a) => ({ label: a.action, value: a._count.id })),
+    recentAuditActivity: recentAuditRaw.map((a) => ({
+      id: a.id,
+      timestamp: a.createdAt,
+      user: a.username || "System",
+      action: a.action,
+      module: a.module || "General",
+      entity: a.entity,
+      record: a.recordIdentifier || a.recordId || "-",
+      description: a.description || a.details || "-",
+      status: a.status || "SUCCESS",
+      previousValue: a.previousValue,
+      newValue: a.newValue,
+    })),
+    sensitiveActivity: sensitiveAuditRaw.map((a) => ({
+      id: a.id,
+      timestamp: a.createdAt,
+      user: a.username || "System",
+      action: a.action,
+      entity: a.entity,
+      record: a.recordIdentifier || a.recordId || "-",
+      description: a.description || "-",
+    })),
+  };
+}
+
+// ========================================================
+// 8. PURCHASING DASHBOARD
+// ========================================================
+export interface PurchasingDashboardData {
+  pendingPurchaseOrders: number;
+  openPurchaseOrders: number;
+  thisMonthPurchase: number;
+  totalSuppliers: number;
+  pendingReceipts: number;
+  purchaseValue: number;
+  purchaseTrend: Array<{ label: string; value: number }>;
+  purchaseBySupplier: Array<{ label: string; value: number }>;
+  purchaseByCategory: Array<{ label: string; value: number }>;
+  poStatusDistribution: Array<{ label: string; value: number }>;
+  pendingPOsList: Array<{
+    id: string;
+    poNumber: string;
+    supplier: string;
+    totalAmount: number;
+    status: string;
+    createdAt: Date;
+  }>;
+  supplierSummary: Array<{
+    id: string;
+    name: string;
+    poCount: number;
+    totalPurchased: number;
+  }>;
+}
+
+export async function getPurchasingDashboardData(): Promise<PurchasingDashboardData> {
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+
+  const [
+    pendingPOs,
+    openPOs,
+    monthPurchasesAgg,
+    totalSuppliers,
+    pendingReceipts,
+    totalPurchasesAgg,
+    poStatusRaw,
+    poBySupplierRaw,
+    pendingPOsListRaw,
+    suppliersRaw,
+  ] = await Promise.all([
+    prisma.purchaseOrder.count({ where: { status: "SUBMITTED" } }),
+    prisma.purchaseOrder.count({
+      where: { status: { in: ["APPROVED", "PARTIALLY_RECEIVED"] } },
+    }),
+    prisma.purchaseOrder.aggregate({
+      where: {
+        createdAt: { gte: startOfMonth },
+        status: { in: ["APPROVED", "PARTIALLY_RECEIVED", "RECEIVED"] },
+      },
+      _sum: { totalAmount: true },
+    }),
+    prisma.supplier.count({ where: { status: "ACTIVE" } }),
+    prisma.purchaseOrder.count({
+      where: { status: { in: ["APPROVED", "PARTIALLY_RECEIVED"] } },
+    }),
+    prisma.purchaseOrder.aggregate({
+      where: { status: { in: ["APPROVED", "PARTIALLY_RECEIVED", "RECEIVED"] } },
+      _sum: { totalAmount: true },
+    }),
+    prisma.purchaseOrder.groupBy({
+      by: ["status"],
+      _count: { id: true },
+    }),
+    prisma.$queryRaw<Array<{ name: string; amount: number }>>`
+      SELECT s."name" as name, COALESCE(SUM(po."totalAmount"), 0)::float as amount
+      FROM "PurchaseOrder" po
+      JOIN "Supplier" s ON po."supplierId" = s."id"
+      GROUP BY s."name"
+      ORDER BY amount DESC
+      LIMIT 5
+    `,
+    prisma.purchaseOrder.findMany({
+      where: { status: { in: ["DRAFT", "SUBMITTED", "APPROVED"] } },
+      take: 6,
+      orderBy: { createdAt: "desc" },
+      include: { supplier: { select: { name: true } } },
+    }),
+    prisma.supplier.findMany({
+      where: { status: "ACTIVE" },
+      take: 5,
+      select: {
+        id: true,
+        name: true,
+        purchaseOrders: {
+          select: { totalAmount: true },
+        },
+      },
+    }),
+  ]);
+
+  // PO Trend last 6 months
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const trendMap = new Map<string, number>();
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    trendMap.set(monthNames[d.getMonth()], 0);
+  }
+
+  const recentPOs = await prisma.purchaseOrder.findMany({
+    where: {
+      createdAt: { gte: new Date(now.getFullYear(), now.getMonth() - 5, 1) },
+      status: { not: "CANCELLED" },
+    },
+    select: { createdAt: true, totalAmount: true },
+  });
+  for (const po of recentPOs) {
+    const m = monthNames[new Date(po.createdAt).getMonth()];
+    if (trendMap.has(m)) trendMap.set(m, (trendMap.get(m) || 0) + Number(po.totalAmount));
+  }
+
+  return {
+    pendingPurchaseOrders: pendingPOs,
+    openPurchaseOrders: openPOs,
+    thisMonthPurchase: Number(monthPurchasesAgg._sum.totalAmount || 0),
+    totalSuppliers,
+    pendingReceipts,
+    purchaseValue: Number(totalPurchasesAgg._sum.totalAmount || 0),
+    purchaseTrend: Array.from(trendMap.entries()).map(([label, value]) => ({ label, value })),
+    purchaseBySupplier: poBySupplierRaw.map((s) => ({ label: s.name, value: Number(s.amount) })),
+    purchaseByCategory: [],
+    poStatusDistribution: poStatusRaw.map((s) => ({ label: s.status, value: s._count.id })),
+    pendingPOsList: pendingPOsListRaw.map((po) => ({
+      id: po.id,
+      poNumber: po.poNumber,
+      supplier: po.supplier.name,
+      totalAmount: Number(po.totalAmount),
+      status: po.status,
+      createdAt: po.createdAt,
+    })),
+    supplierSummary: suppliersRaw.map((s) => ({
+      id: s.id,
+      name: s.name,
+      poCount: s.purchaseOrders.length,
+      totalPurchased: s.purchaseOrders.reduce((sum, po) => sum + Number(po.totalAmount), 0),
+    })),
+  };
+}
+
+// ========================================================
+// 9. WAREHOUSE DASHBOARD
+// ========================================================
+export interface WarehouseDashboardData {
+  pendingReceipts: number;
+  todayReceipts: number;
+  receivedItems: number;
+  pendingPOReceipts: number;
+  partialReceipts: number;
+  completedReceipts: number;
+  goodsReceiptTrend: Array<{ label: string; value: number }>;
+  receiptStatusDistribution: Array<{ label: string; value: number }>;
+  goodsReceivedBySupplier: Array<{ label: string; value: number }>;
+  pendingGoodsReceipts: Array<{
+    id: string;
+    grNumber: string;
+    poNumber: string;
+    supplier: string;
+    status: string;
+    createdAt: Date;
+  }>;
+  recentGoodsReceipts: Array<{
+    id: string;
+    grNumber: string;
+    poNumber: string;
+    supplier: string;
+    receivedDate: Date;
+    receivedBy: string;
+    status: string;
+  }>;
+}
+
+export async function getWarehouseDashboardData(): Promise<WarehouseDashboardData> {
+  const { startOfToday, endOfToday } = getTodayBounds();
+
+  const [
+    pendingGRs,
+    todayGRs,
+    receivedItemsAgg,
+    pendingPOsCount,
+    partialPOsCount,
+    completedGRs,
+    receiptStatusRaw,
+    grBySupplierRaw,
+    pendingGRsList,
+    recentGRsList,
+  ] = await Promise.all([
+    prisma.goodsReceipt.count({ where: { status: "DRAFT" } }),
+    prisma.goodsReceipt.count({
+      where: {
+        createdAt: { gte: startOfToday, lte: endOfToday },
+        status: "CONFIRMED",
+      },
+    }),
+    prisma.goodsReceiptItem.aggregate({
+      where: { goodsReceipt: { status: "CONFIRMED" } },
+      _sum: { receivedQuantity: true },
+    }),
+    prisma.purchaseOrder.count({ where: { status: "APPROVED" } }),
+    prisma.purchaseOrder.count({ where: { status: "PARTIALLY_RECEIVED" } }),
+    prisma.goodsReceipt.count({ where: { status: "CONFIRMED" } }),
+    prisma.goodsReceipt.groupBy({
+      by: ["status"],
+      _count: { id: true },
+    }),
+    prisma.$queryRaw<Array<{ name: string; count: number }>>`
+      SELECT s."name" as name, COUNT(gr."id")::int as count
+      FROM "GoodsReceipt" gr
+      JOIN "Supplier" s ON gr."supplierId" = s."id"
+      GROUP BY s."name"
+      ORDER BY count DESC
+      LIMIT 5
+    `,
+    prisma.goodsReceipt.findMany({
+      where: { status: "DRAFT" },
+      take: 6,
+      orderBy: { createdAt: "desc" },
+      include: {
+        purchaseOrder: { select: { poNumber: true } },
+        supplier: { select: { name: true } },
+      },
+    }),
+    prisma.goodsReceipt.findMany({
+      take: 6,
+      orderBy: { createdAt: "desc" },
+      include: {
+        purchaseOrder: { select: { poNumber: true } },
+        supplier: { select: { name: true } },
+        receivedBy: { select: { firstName: true, lastName: true } },
+      },
+    }),
+  ]);
+
+  // 7-day trend
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const dayMap = new Map<string, number>();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(startOfToday.getTime() - i * 24 * 60 * 60 * 1000);
+    dayMap.set(dayNames[d.getDay()], 0);
+  }
+
+  const grLast7Days = await prisma.goodsReceipt.findMany({
+    where: {
+      createdAt: { gte: new Date(startOfToday.getTime() - 6 * 24 * 60 * 60 * 1000) },
+      status: "CONFIRMED",
+    },
+    select: { createdAt: true },
+  });
+  for (const gr of grLast7Days) {
+    const d = dayNames[new Date(gr.createdAt).getDay()];
+    if (dayMap.has(d)) dayMap.set(d, (dayMap.get(d) || 0) + 1);
+  }
+
+  return {
+    pendingReceipts: pendingGRs,
+    todayReceipts: todayGRs,
+    receivedItems: receivedItemsAgg._sum.receivedQuantity || 0,
+    pendingPOReceipts: pendingPOsCount,
+    partialReceipts: partialPOsCount,
+    completedReceipts: completedGRs,
+    goodsReceiptTrend: Array.from(dayMap.entries()).map(([label, value]) => ({ label, value })),
+    receiptStatusDistribution: receiptStatusRaw.map((s) => ({ label: s.status, value: s._count.id })),
+    goodsReceivedBySupplier: grBySupplierRaw.map((s) => ({ label: s.name, value: s.count })),
+    pendingGoodsReceipts: pendingGRsList.map((gr) => ({
+      id: gr.id,
+      grNumber: gr.grNumber,
+      poNumber: gr.purchaseOrder.poNumber,
+      supplier: gr.supplier.name,
+      status: gr.status,
+      createdAt: gr.createdAt,
+    })),
+    recentGoodsReceipts: recentGRsList.map((gr) => ({
+      id: gr.id,
+      grNumber: gr.grNumber,
+      poNumber: gr.purchaseOrder.poNumber,
+      supplier: gr.supplier.name,
+      receivedDate: gr.grDate,
+      receivedBy: gr.receivedBy ? `${gr.receivedBy.firstName} ${gr.receivedBy.lastName}` : "Warehouse Staff",
+      status: gr.status,
+    })),
+  };
+}

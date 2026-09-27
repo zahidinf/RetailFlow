@@ -28,7 +28,12 @@ export default function Navbar({ userName, userRole }: NavbarProps) {
   const canViewUsers = hasPermission("USER_VIEW") || isSuperAdmin;
   const canManageRoles = hasPermission("ROLE_MANAGE") || isSuperAdmin;
   const canViewParameters = hasPermission("PARAMETER_SETTINGS_VIEW") || isSuperAdmin;
-  const isAdmin = canViewUsers || canManageRoles || canViewParameters || isSuperAdmin;
+  const canViewPromotions =
+    hasPermission("PROMOTION_VIEW") ||
+    hasPermission("promotion.view") ||
+    hasPermission("promotion_view") ||
+    isSuperAdmin;
+  const isAdmin = canViewUsers || canManageRoles || canViewParameters || canViewPromotions || isSuperAdmin;
 
   const canViewCategories = hasPermission("CATEGORY_VIEW") || isSuperAdmin;
   const canViewProducts = hasPermission("PRODUCT_VIEW") || isSuperAdmin;
@@ -738,6 +743,27 @@ export default function Navbar({ userName, userRole }: NavbarProps) {
                           />
                         </svg>
                         Parameter Settings
+                      </Link>
+                    )}
+                    {canViewPromotions && (
+                      <Link
+                        href="/admin/promotions"
+                        onClick={() => setIsMobileMenuOpen(false)}
+                        className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                          pathname.startsWith("/admin/promotions")
+                            ? "bg-blue-600 text-white font-medium"
+                            : "text-[#94A3B8] hover:bg-[#1E293B] hover:text-white"
+                        }`}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
+                          />
+                        </svg>
+                        Promotion Management
                       </Link>
                     )}
                     {isSuperAdmin && (

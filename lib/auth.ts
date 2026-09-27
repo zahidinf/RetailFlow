@@ -96,7 +96,7 @@ export function formatRoleName(roleName: string): string {
   if (roleName === "ADMIN") return "Admin";
   if (roleName === "MANAGER") return "Manager";
   if (roleName === "CASHIER") return "Cashier";
-  if (roleName === "INVENTORY_STAFF") return "Inventory Staff";
+  if (roleName === "INVENTORY" || roleName === "INVENTORY_STAFF") return "Inventory";
   if (roleName === "PURCHASING") return "Purchasing";
   if (roleName === "WAREHOUSE") return "Warehouse";
   if (roleName === "ACCOUNTANT") return "Accountant";

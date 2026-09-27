@@ -92,6 +92,15 @@ const ALL_PERMISSIONS = [
   { name: "REPORT_CASHIER_VIEW", description: "View cashier reports" },
   { name: "REPORT_AUDIT_VIEW", description: "View audit reports" },
   { name: "REPORT_EXPORT", description: "Export report data to CSV/Excel" },
+
+  // Promotion Management
+  { name: "PROMOTION_VIEW", description: "View promotion list and details" },
+  { name: "PROMOTION_CREATE", description: "Create promotions" },
+  { name: "PROMOTION_EDIT", description: "Edit existing promotions" },
+  { name: "PROMOTION_DELETE", description: "Delete promotions" },
+  { name: "PROMOTION_ACTIVATE", description: "Activate promotions" },
+  { name: "PROMOTION_DEACTIVATE", description: "Deactivate promotions" },
+  { name: "PROMOTION_APPLY", description: "Apply promotions in POS transactions" },
 ];
 
 async function main() {
@@ -314,6 +323,13 @@ async function main() {
     "REPORT_CASHIER_VIEW",
     "REPORT_AUDIT_VIEW",
     "REPORT_EXPORT",
+    "PROMOTION_VIEW",
+    "PROMOTION_CREATE",
+    "PROMOTION_EDIT",
+    "PROMOTION_DELETE",
+    "PROMOTION_ACTIVATE",
+    "PROMOTION_DEACTIVATE",
+    "PROMOTION_APPLY",
   ];
   await assignPermissionsToRole(adminRole.id, adminPerms);
   console.log(`   Assigned ${adminPerms.length} permissions to ADMIN`);
@@ -348,6 +364,12 @@ async function main() {
     "REPORT_WAREHOUSE_VIEW",
     "REPORT_CASHIER_VIEW",
     "REPORT_EXPORT",
+    "PROMOTION_VIEW",
+    "PROMOTION_CREATE",
+    "PROMOTION_EDIT",
+    "PROMOTION_ACTIVATE",
+    "PROMOTION_DEACTIVATE",
+    "PROMOTION_APPLY",
   ];
   await assignPermissionsToRole(managerRole.id, managerPerms);
   console.log(`   Assigned ${managerPerms.length} permissions to MANAGER`);
@@ -367,6 +389,8 @@ async function main() {
     "TRANSACTION_REFUND_CREATE",
     "REPORT_VIEW",
     "REPORT_CASHIER_VIEW",
+    "PROMOTION_VIEW",
+    "PROMOTION_APPLY",
   ];
   await assignPermissionsToRole(cashierRole.id, cashierPerms);
   console.log(`   Assigned ${cashierPerms.length} permissions to CASHIER`);

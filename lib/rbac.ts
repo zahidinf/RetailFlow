@@ -189,6 +189,26 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
   "REPORT_CASHIER_VIEW": ["report.cashier.view", "report_cashier_view", "cashier_report.view"],
   "REPORT_AUDIT_VIEW": ["report.audit.view", "report_audit_view", "audit_report.view"],
   "REPORT_EXPORT": ["report.export", "report_export"],
+
+  // Promotion Management
+  "PROMOTION_VIEW": ["promotion.view", "promotion_view", "promotions.view", "promotions_view"],
+  "PROMOTION_CREATE": ["promotion.create", "promotion_create", "promotions.create"],
+  "PROMOTION_EDIT": ["promotion.edit", "promotion_edit", "promotion.update", "promotion_update", "PROMOTION_UPDATE"],
+  "PROMOTION_DELETE": ["promotion.delete", "promotion_delete", "promotions.delete"],
+  "PROMOTION_ACTIVATE": ["promotion.activate", "promotion_activate"],
+  "PROMOTION_DEACTIVATE": ["promotion.deactivate", "promotion_deactivate"],
+  "PROMOTION_APPLY": ["promotion.apply", "promotion_apply"],
+
+  // Dashboard RBAC & aliases
+  "DASHBOARD_VIEW": ["dashboard.view", "dashboard_view", "dashboard:view"],
+  "DASHBOARD_SALES_VIEW": ["dashboard.sales.view", "dashboard_sales_view", "dashboard:sales:view"],
+  "DASHBOARD_INVENTORY_VIEW": ["dashboard.inventory.view", "dashboard_inventory_view", "dashboard:inventory:view"],
+  "DASHBOARD_PURCHASE_VIEW": ["dashboard.purchase.view", "dashboard_purchase_view", "dashboard:purchase:view"],
+  "DASHBOARD_FINANCE_VIEW": ["dashboard.finance.view", "dashboard_finance_view", "dashboard:finance:view"],
+  "DASHBOARD_AUDIT_VIEW": ["dashboard.audit.view", "dashboard_audit_view", "dashboard:audit:view"],
+  "DASHBOARD_USER_ACTIVITY_VIEW": ["dashboard.user_activity.view", "dashboard_user_activity_view", "dashboard:user_activity:view"],
+  "DASHBOARD_RECEIVING_VIEW": ["dashboard.receiving.view", "dashboard_receiving_view", "dashboard:receiving:view"],
+  "DASHBOARD_TRANSACTION_VIEW": ["dashboard.transaction.view", "dashboard_transaction_view", "dashboard:transaction:view"],
 };
 
 const REVERSE_ALIASES: Record<string, string> = {};
@@ -239,6 +259,67 @@ export async function getUserPermissions(userId: string): Promise<string[]> {
           }
         }
       }
+    }
+
+    // Map domain permissions to dashboard permissions
+    const addDashboardAliases = (perm: string) => {
+      permissionSet.add(perm);
+      const aliases = PERMISSION_ALIASES[perm];
+      if (aliases) {
+        for (const alias of aliases) {
+          permissionSet.add(alias);
+        }
+      }
+    };
+
+    if (permissionSet.size > 0) {
+      addDashboardAliases("DASHBOARD_VIEW");
+    }
+    if (
+      permissionSet.has("SALES_VIEW") ||
+      permissionSet.has("SALES_VIEW_ALL") ||
+      permissionSet.has("REPORT_SALES_VIEW")
+    ) {
+      addDashboardAliases("DASHBOARD_SALES_VIEW");
+    }
+    if (
+      permissionSet.has("STOCK_VIEW") ||
+      permissionSet.has("PRODUCT_VIEW") ||
+      permissionSet.has("REPORT_INVENTORY_VIEW")
+    ) {
+      addDashboardAliases("DASHBOARD_INVENTORY_VIEW");
+    }
+    if (
+      permissionSet.has("PURCHASE_ORDER_VIEW") ||
+      permissionSet.has("REPORT_PURCHASING_VIEW")
+    ) {
+      addDashboardAliases("DASHBOARD_PURCHASE_VIEW");
+    }
+    if (permissionSet.has("REPORT_FINANCE_VIEW")) {
+      addDashboardAliases("DASHBOARD_FINANCE_VIEW");
+    }
+    if (permissionSet.has("REPORT_AUDIT_VIEW")) {
+      addDashboardAliases("DASHBOARD_AUDIT_VIEW");
+    }
+    if (
+      permissionSet.has("USER_VIEW") ||
+      permissionSet.has("REPORT_AUDIT_VIEW")
+    ) {
+      addDashboardAliases("DASHBOARD_USER_ACTIVITY_VIEW");
+    }
+    if (
+      permissionSet.has("GOODS_RECEIPT_VIEW") ||
+      permissionSet.has("REPORT_WAREHOUSE_VIEW")
+    ) {
+      addDashboardAliases("DASHBOARD_RECEIVING_VIEW");
+    }
+    if (
+      permissionSet.has("SALES_VIEW") ||
+      permissionSet.has("SALES_VIEW_OWN") ||
+      permissionSet.has("SALES_DETAIL") ||
+      permissionSet.has("REPORT_CASHIER_VIEW")
+    ) {
+      addDashboardAliases("DASHBOARD_TRANSACTION_VIEW");
     }
 
     return Array.from(permissionSet);
