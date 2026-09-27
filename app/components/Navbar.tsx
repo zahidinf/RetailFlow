@@ -70,7 +70,6 @@ export default function Navbar({ userName, userRole }: NavbarProps) {
       canViewFinanceReports ||
       canViewCashierReports ||
       canViewAuditReports);
-  const [isReportsSubmenuOpen, setIsReportsSubmenuOpen] = useState(true);
 
   // Close mobile menu when pressing Escape
   useEffect(() => {
@@ -601,125 +600,32 @@ export default function Navbar({ userName, userRole }: NavbarProps) {
               </div>
             )}
 
-            {/* Reports Section */}
+            {/* Reports Link */}
             {hasReports && (
-              <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsReportsSubmenuOpen(!isReportsSubmenuOpen)}
-                  className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider hover:text-slate-200"
+              <Link
+                href="/reports"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  pathname.startsWith("/reports")
+                    ? "bg-blue-600 text-white font-semibold"
+                    : "text-[#CBD5E1] hover:bg-[#1E293B] hover:text-white"
+                }`}
+              >
+                <svg
+                  className={`w-5 h-5 ${pathname.startsWith("/reports") ? "text-white" : "text-[#94A3B8]"}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
                 >
-                  <span>Reports</span>
-                  <svg
-                    className={`w-4 h-4 transition-transform duration-200 ${
-                      isReportsSubmenuOpen ? "rotate-180" : ""
-                    }`}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M19 9l-7 7-7-7"
-                    />
-                  </svg>
-                </button>
-
-                {isReportsSubmenuOpen && (
-                  <div className="space-y-1 mt-1 pl-2">
-                    <Link
-                      href="/reports"
-                      onClick={() => setIsMobileMenuOpen(false)}
-                      className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                        pathname === "/reports"
-                          ? "bg-blue-600 text-white font-medium"
-                          : "text-[#94A3B8] hover:bg-[#1E293B] hover:text-white"
-                      }`}
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                      </svg>
-                      All Reports Center
-                    </Link>
-
-                    {canViewSalesReports && (
-                      <Link
-                        href="/reports?category=sales"
-                        onClick={() => setIsMobileMenuOpen(false)}
-                        className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                          pathname === "/reports" && new URLSearchParams(typeof window !== "undefined" ? window.location.search : "").get("category") === "sales"
-                            ? "bg-blue-600 text-white font-medium"
-                            : "text-[#94A3B8] hover:bg-[#1E293B] hover:text-white"
-                        }`}
-                      >
-                        <span>Sales Reports</span>
-                      </Link>
-                    )}
-
-                    {canViewInventoryReports && (
-                      <Link
-                        href="/reports?category=inventory"
-                        onClick={() => setIsMobileMenuOpen(false)}
-                        className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-[#94A3B8] hover:bg-[#1E293B] hover:text-white transition-colors"
-                      >
-                        <span>Inventory Reports</span>
-                      </Link>
-                    )}
-
-                    {canViewPurchasingReports && (
-                      <Link
-                        href="/reports?category=purchasing"
-                        onClick={() => setIsMobileMenuOpen(false)}
-                        className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-[#94A3B8] hover:bg-[#1E293B] hover:text-white transition-colors"
-                      >
-                        <span>Purchasing Reports</span>
-                      </Link>
-                    )}
-
-                    {canViewWarehouseReports && (
-                      <Link
-                        href="/reports?category=warehouse"
-                        onClick={() => setIsMobileMenuOpen(false)}
-                        className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-[#94A3B8] hover:bg-[#1E293B] hover:text-white transition-colors"
-                      >
-                        <span>Warehouse Reports</span>
-                      </Link>
-                    )}
-
-                    {canViewFinanceReports && (
-                      <Link
-                        href="/reports?category=finance"
-                        onClick={() => setIsMobileMenuOpen(false)}
-                        className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-[#94A3B8] hover:bg-[#1E293B] hover:text-white transition-colors"
-                      >
-                        <span>Finance Reports</span>
-                      </Link>
-                    )}
-
-                    {canViewCashierReports && (
-                      <Link
-                        href="/reports?category=cashier"
-                        onClick={() => setIsMobileMenuOpen(false)}
-                        className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-[#94A3B8] hover:bg-[#1E293B] hover:text-white transition-colors"
-                      >
-                        <span>Cashier Reports</span>
-                      </Link>
-                    )}
-
-                    {canViewAuditReports && (
-                      <Link
-                        href="/reports?category=audit"
-                        onClick={() => setIsMobileMenuOpen(false)}
-                        className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-[#94A3B8] hover:bg-[#1E293B] hover:text-white transition-colors"
-                      >
-                        <span>Audit Reports</span>
-                      </Link>
-                    )}
-                  </div>
-                )}
-              </div>
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                  />
+                </svg>
+                Reports
+              </Link>
             )}
 
             {/* Admin Section */}

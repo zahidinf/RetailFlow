@@ -12,8 +12,7 @@ export default function AdminMenu() {
   const canViewUsers = hasPermission("USER_VIEW") || isSuperAdmin;
   const canManageRoles = hasPermission("ROLE_MANAGE") || isSuperAdmin;
   const canViewParameters = hasPermission("PARAMETER_SETTINGS_VIEW") || isSuperAdmin;
-  const canViewAuditReports = hasPermission("REPORT_AUDIT_VIEW") || isSuperAdmin;
-  const isAdmin = canViewUsers || canManageRoles || canViewParameters || canViewAuditReports || isSuperAdmin;
+  const isAdmin = canViewUsers || canManageRoles || canViewParameters || isSuperAdmin;
 
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -23,8 +22,7 @@ export default function AdminMenu() {
     pathname.startsWith("/admin/roles") ||
     pathname.startsWith("/admin/sessions") ||
     pathname.startsWith("/admin/parameter-settings") ||
-    pathname.startsWith("/administration/parameter-settings") ||
-    pathname.startsWith("/admin/audit-reports");
+    pathname.startsWith("/administration/parameter-settings");
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -202,34 +200,6 @@ export default function AdminMenu() {
                   />
                 </svg>
                 <span>Session Policy</span>
-              </div>
-            </Link>
-          )}
-          {canViewAuditReports && (
-            <Link
-              href="/reports?category=audit"
-              className={`block px-4 py-2.5 text-sm transition-colors ${
-                pathname.startsWith("/reports") && (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("category") === "audit" : false)
-                  ? "bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-medium"
-                  : "text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
-              }`}
-              onClick={() => setIsOpen(false)}
-            >
-              <div className="flex items-center gap-2.5">
-                <svg
-                  className="w-4 h-4 text-slate-400 dark:text-slate-500"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                  />
-                </svg>
-                <span>Audit Reports</span>
               </div>
             </Link>
           )}

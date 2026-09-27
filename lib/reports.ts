@@ -89,7 +89,7 @@ export async function getSalesTransactionsReport(
   } & PaginationParams = {}
 ) {
   const page = Math.max(1, filter.page || 1);
-  const pageSize = Math.max(1, Math.min(100, filter.pageSize || 10));
+  const pageSize = Math.max(1, Math.min(5000, filter.pageSize || 10));
   const skip = (page - 1) * pageSize;
 
   const dateRange = buildDateRangeFilter(filter.startDate, filter.endDate);
@@ -150,7 +150,7 @@ export async function getSalesByProductReport(
   filter: DateFilter & { categoryId?: string; search?: string } & PaginationParams = {}
 ) {
   const page = Math.max(1, filter.page || 1);
-  const pageSize = Math.max(1, Math.min(100, filter.pageSize || 10));
+  const pageSize = Math.max(1, Math.min(5000, filter.pageSize || 10));
   const skip = (page - 1) * pageSize;
 
   const dateRange = buildDateRangeFilter(filter.startDate, filter.endDate);
@@ -388,7 +388,7 @@ export async function getRefundReport(
   filter: DateFilter & { search?: string } & PaginationParams = {}
 ) {
   const page = Math.max(1, filter.page || 1);
-  const pageSize = Math.max(1, Math.min(100, filter.pageSize || 10));
+  const pageSize = Math.max(1, Math.min(5000, filter.pageSize || 10));
   const skip = (page - 1) * pageSize;
 
   const dateRange = buildDateRangeFilter(filter.startDate, filter.endDate);
@@ -440,7 +440,7 @@ export async function getDiscountReport(
   filter: DateFilter & { supplierId?: string; search?: string } & PaginationParams = {}
 ) {
   const page = Math.max(1, filter.page || 1);
-  const pageSize = Math.max(1, Math.min(100, filter.pageSize || 10));
+  const pageSize = Math.max(1, Math.min(5000, filter.pageSize || 10));
   const skip = (page - 1) * pageSize;
 
   const dateRange = buildDateRangeFilter(filter.startDate, filter.endDate);
@@ -493,7 +493,7 @@ export async function getStockSummaryReport(
   filter: { categoryId?: string; status?: string; search?: string } & PaginationParams = {}
 ) {
   const page = Math.max(1, filter.page || 1);
-  const pageSize = Math.max(1, Math.min(100, filter.pageSize || 10));
+  const pageSize = Math.max(1, Math.min(5000, filter.pageSize || 10));
   const skip = (page - 1) * pageSize;
 
   const where: Prisma.ProductWhereInput = {
@@ -563,7 +563,7 @@ export async function getStockMovementReport(
   } & PaginationParams = {}
 ) {
   const page = Math.max(1, filter.page || 1);
-  const pageSize = Math.max(1, Math.min(100, filter.pageSize || 10));
+  const pageSize = Math.max(1, Math.min(5000, filter.pageSize || 10));
   const skip = (page - 1) * pageSize;
 
   const dateRange = buildDateRangeFilter(filter.startDate, filter.endDate);
@@ -628,7 +628,7 @@ export async function getLowStockReport(
   filter: { categoryId?: string; search?: string } & PaginationParams = {}
 ) {
   const page = Math.max(1, filter.page || 1);
-  const pageSize = Math.max(1, Math.min(100, filter.pageSize || 10));
+  const pageSize = Math.max(1, Math.min(5000, filter.pageSize || 10));
   const skip = (page - 1) * pageSize;
 
   const where: Prisma.ProductWhereInput = {
@@ -679,7 +679,7 @@ export async function getOutOfStockReport(
   filter: { categoryId?: string; search?: string } & PaginationParams = {}
 ) {
   const page = Math.max(1, filter.page || 1);
-  const pageSize = Math.max(1, Math.min(100, filter.pageSize || 10));
+  const pageSize = Math.max(1, Math.min(5000, filter.pageSize || 10));
   const skip = (page - 1) * pageSize;
 
   const where: Prisma.ProductWhereInput = {
@@ -767,7 +767,7 @@ export async function getPurchaseOrdersReport(
   } & PaginationParams = {}
 ) {
   const page = Math.max(1, filter.page || 1);
-  const pageSize = Math.max(1, Math.min(100, filter.pageSize || 10));
+  const pageSize = Math.max(1, Math.min(5000, filter.pageSize || 10));
   const skip = (page - 1) * pageSize;
 
   const dateRange = buildDateRangeFilter(filter.startDate, filter.endDate);
@@ -865,7 +865,7 @@ export async function getPurchaseByProductReport(
   filter: DateFilter & { search?: string } & PaginationParams = {}
 ) {
   const page = Math.max(1, filter.page || 1);
-  const pageSize = Math.max(1, Math.min(100, filter.pageSize || 10));
+  const pageSize = Math.max(1, Math.min(5000, filter.pageSize || 10));
   const skip = (page - 1) * pageSize;
 
   const dateRange = buildDateRangeFilter(filter.startDate, filter.endDate);
@@ -951,7 +951,7 @@ export async function getGoodsReceiptReport(
   } & PaginationParams = {}
 ) {
   const page = Math.max(1, filter.page || 1);
-  const pageSize = Math.max(1, Math.min(100, filter.pageSize || 10));
+  const pageSize = Math.max(1, Math.min(5000, filter.pageSize || 10));
   const skip = (page - 1) * pageSize;
 
   const dateRange = buildDateRangeFilter(filter.startDate, filter.endDate);
@@ -1054,7 +1054,7 @@ export async function getReceivingDiscrepancyReport(
   filter: { supplierId?: string; search?: string } & PaginationParams = {}
 ) {
   const page = Math.max(1, filter.page || 1);
-  const pageSize = Math.max(1, Math.min(100, filter.pageSize || 10));
+  const pageSize = Math.max(1, Math.min(5000, filter.pageSize || 10));
   const skip = (page - 1) * pageSize;
 
   const orders = await prisma.purchaseOrder.findMany({
@@ -1304,7 +1304,7 @@ export async function getUserActivityReport(
   } & PaginationParams = {}
 ) {
   const page = Math.max(1, filter.page || 1);
-  const pageSize = Math.max(1, Math.min(100, filter.pageSize || 10));
+  const pageSize = Math.max(1, Math.min(5000, filter.pageSize || 10));
   const skip = (page - 1) * pageSize;
 
   const dateRange = buildDateRangeFilter(filter.startDate, filter.endDate);
@@ -1391,7 +1391,7 @@ export async function getLoginActivityReport(
   filter: DateFilter & { search?: string } & PaginationParams = {}
 ) {
   const page = Math.max(1, filter.page || 1);
-  const pageSize = Math.max(1, Math.min(100, filter.pageSize || 10));
+  const pageSize = Math.max(1, Math.min(5000, filter.pageSize || 10));
   const skip = (page - 1) * pageSize;
 
   const dateRange = buildDateRangeFilter(filter.startDate, filter.endDate);
@@ -1501,8 +1501,199 @@ export async function getReportFilterOptions() {
     suppliers,
     cashiers: cashiers.map((c) => ({ id: c.id, name: `${c.firstName} ${c.lastName}` })),
     users: users.map((u) => ({ id: u.id, name: `${u.firstName} ${u.lastName} (${u.email})` })),
-    auditModules: ["Administration", "Product Management", "Purchasing"],
-    auditEntities: ["User", "Role", "Category", "Product", "Stock", "ParameterSetting", "SessionSetting", "Supplier", "Sale"],
-    auditActions: ["CREATE", "UPDATE", "DELETE", "TRANSACTION_REFUND"],
+    auditModules: ["Administration", "Product Management", "Purchasing", "Reports"],
+    auditEntities: ["User", "Role", "Category", "Product", "Stock", "ParameterSetting", "SessionSetting", "Supplier", "Sale", "Report"],
+    auditActions: ["CREATE", "UPDATE", "DELETE", "TRANSACTION_REFUND", "REPORT_EXPORT"],
   };
+}
+
+// -------------------------------------------------------------
+// CENTRAL REPORT DISPATCHER
+// -------------------------------------------------------------
+
+export interface ReportQueryParams {
+  startDate?: string;
+  endDate?: string;
+  search?: string;
+  status?: string;
+  categoryId?: string;
+  supplierId?: string;
+  cashierId?: string;
+  paymentMethod?: string;
+  productId?: string;
+  userId?: string;
+  action?: string;
+  module?: string;
+  entity?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export async function executeReportQuery(type: string, params: ReportQueryParams) {
+  const {
+    startDate,
+    endDate,
+    search,
+    status,
+    categoryId,
+    supplierId,
+    cashierId,
+    paymentMethod,
+    productId,
+    userId,
+    action,
+    module: auditModule,
+    entity: auditEntity,
+    page = 1,
+    pageSize = 10,
+  } = params;
+
+  switch (type) {
+    // Sales
+    case "sales-summary":
+      return await getSalesSummaryReport({ startDate, endDate });
+    case "sales-transactions":
+      return await getSalesTransactionsReport({
+        startDate,
+        endDate,
+        cashierId,
+        status,
+        paymentMethod,
+        search,
+        page,
+        pageSize,
+      });
+    case "sales-by-product":
+      return await getSalesByProductReport({
+        startDate,
+        endDate,
+        categoryId,
+        search,
+        page,
+        pageSize,
+      });
+    case "sales-by-category":
+      return await getSalesByCategoryReport({ startDate, endDate });
+    case "sales-by-cashier":
+      return await getSalesByCashierReport({ startDate, endDate });
+    case "sales-by-payment-method":
+      return await getSalesByPaymentMethodReport({ startDate, endDate });
+    case "sales-refund":
+      return await getRefundReport({ startDate, endDate, search, page, pageSize });
+    case "sales-discount":
+      return await getDiscountReport({ startDate, endDate, supplierId, search, page, pageSize });
+
+    // Inventory
+    case "stock-summary":
+      return await getStockSummaryReport({ categoryId, status, search, page, pageSize });
+    case "stock-movement":
+      return await getStockMovementReport({
+        startDate,
+        endDate,
+        productId,
+        type: status,
+        search,
+        page,
+        pageSize,
+      });
+    case "stock-adjustment":
+      return await getStockAdjustmentReport({ startDate, endDate, search, page, pageSize });
+    case "low-stock":
+      return await getLowStockReport({ categoryId, search, page, pageSize });
+    case "out-of-stock":
+      return await getOutOfStockReport({ categoryId, search, page, pageSize });
+
+    // Purchasing
+    case "purchase-summary":
+      return await getPurchaseSummaryReport({ startDate, endDate });
+    case "purchase-orders":
+      return await getPurchaseOrdersReport({
+        startDate,
+        endDate,
+        supplierId,
+        status,
+        search,
+        page,
+        pageSize,
+      });
+    case "purchase-by-supplier":
+      return await getPurchaseBySupplierReport({ startDate, endDate });
+    case "purchase-by-product":
+      return await getPurchaseByProductReport({ startDate, endDate, search, page, pageSize });
+    case "outstanding-purchase-orders":
+      return await getOutstandingPurchaseOrdersReport({ supplierId, search, page, pageSize });
+
+    // Warehouse
+    case "goods-receipt":
+      return await getGoodsReceiptReport({
+        startDate,
+        endDate,
+        supplierId,
+        status,
+        search,
+        page,
+        pageSize,
+      });
+    case "receiving-by-supplier":
+      return await getReceivingBySupplierReport({ startDate, endDate });
+    case "receiving-by-po":
+      return await getReceivingByPOReport({ startDate, endDate, search, page, pageSize });
+    case "receiving-discrepancy":
+      return await getReceivingDiscrepancyReport({ supplierId, search, page, pageSize });
+    case "pending-receiving":
+      return await getPendingReceivingReport({ supplierId, search, page, pageSize });
+    case "partial-receiving":
+      return await getPartialReceivingReport({ supplierId, search, page, pageSize });
+
+    // Finance
+    case "revenue":
+      return await getRevenueReport({ startDate, endDate });
+    case "payment":
+      return await getPaymentReport({ startDate, endDate });
+    case "tax":
+      return await getTaxReport({ startDate, endDate });
+    case "refund":
+      return await getRefundFinanceReport({ startDate, endDate });
+    case "discount":
+      return await getDiscountFinanceReport({ startDate, endDate });
+    case "purchase-expense":
+      return await getPurchaseExpenseReport({ startDate, endDate });
+
+    // Cashier
+    case "cashier-sales":
+      return await getCashierSalesReport({ startDate, endDate });
+    case "payment-summary":
+      return await getPaymentSummaryReport({ startDate, endDate });
+    case "cash-collection":
+      return await getCashCollectionReport({ startDate, endDate });
+
+    // Audit
+    case "user-activity":
+      return await getUserActivityReport({
+        startDate,
+        endDate,
+        userId,
+        action,
+        module: auditModule,
+        entity: auditEntity,
+        search,
+        page,
+        pageSize,
+      });
+    case "login-activity":
+      return await getLoginActivityReport({ startDate, endDate, search, page, pageSize });
+    case "transaction-audit":
+      return await getTransactionAuditReport({ startDate, endDate, search, page, pageSize });
+    case "refund-audit":
+      return await getRefundAuditReport({ startDate, endDate, search, page, pageSize });
+    case "stock-adjustment-audit":
+      return await getStockAdjustmentAuditReport({ startDate, endDate, search, page, pageSize });
+    case "purchase-order-audit":
+      return await getPurchaseOrderAuditReport({ startDate, endDate, search, page, pageSize });
+    case "goods-receipt-audit":
+      return await getGoodsReceiptAuditReport({ startDate, endDate, search, page, pageSize });
+
+    default:
+      throw new Error(`Report handler not found for type: ${type}`);
+  }
 }
