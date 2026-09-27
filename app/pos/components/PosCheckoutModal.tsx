@@ -84,7 +84,9 @@ export default function PosCheckoutModal({
   };
 
   const handleSelectSuggestion = (amount: number) => {
+    setPaymentMethod("CASH");
     setPaymentInput(amount.toLocaleString("id-ID"));
+    setCheckoutError(null);
   };
 
   const handleSetExact = () => {
@@ -413,7 +415,7 @@ export default function PosCheckoutModal({
             )}
           </div>
 
-          {/* KOLOM 3: PAYMENT (width 4 cols) */}
+          {/* KOLOM 3: PAYMENT / CHECKOUT CONFIRMATION (width 4 cols) */}
           <div className="md:col-span-4 p-4 flex flex-col justify-between bg-slate-50/20 dark:bg-slate-950/40 space-y-4">
             <div className="space-y-4">
               <div className="pb-2 border-b border-slate-200 dark:border-slate-800">
@@ -421,7 +423,7 @@ export default function PosCheckoutModal({
                   <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
                   </svg>
-                  Payment Breakdown
+                  Payment / Checkout Confirmation
                 </h3>
               </div>
 
@@ -437,8 +439,8 @@ export default function PosCheckoutModal({
                 </div>
                 {totalDiscount > 0 && (
                   <div className="flex justify-between text-green-600 dark:text-green-400 font-semibold">
-                    <span>Discount Deducted</span>
-                    <span>-{formatRupiah(totalDiscount)}</span>
+                    <span>Discount</span>
+                    <span>{formatRupiah(totalDiscount)}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-slate-950 dark:text-white font-bold text-sm pt-2 border-t border-slate-100 dark:border-slate-800">
@@ -475,7 +477,7 @@ export default function PosCheckoutModal({
                 </div>
               </div>
 
-              {/* Dynamic Payment Amount Suggestions (Cash payment) */}
+              {/* Dynamic Payment Amount Suggestions */}
               {isCash && totalAmount > 0 && paymentSuggestions.length > 0 && (
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
@@ -486,7 +488,6 @@ export default function PosCheckoutModal({
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {paymentSuggestions.map((suggestion) => {
-                      const isExact = suggestion === totalAmount;
                       const isCurrentInput =
                         effectivePaymentReceived === suggestion && paymentInput !== "";
 
@@ -495,15 +496,13 @@ export default function PosCheckoutModal({
                           key={suggestion}
                           type="button"
                           onClick={() => handleSelectSuggestion(suggestion)}
-                          className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all ${
+                          className={`flex-1 min-w-[85px] py-1.5 px-2 text-xs font-bold rounded-lg border transition-all text-center ${
                             isCurrentInput
                               ? "bg-blue-600 text-white border-blue-600 shadow-xs ring-2 ring-blue-300 dark:ring-blue-900"
-                              : isExact
-                              ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100"
-                              : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 hover:border-slate-300"
+                              : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 hover:border-slate-400"
                           }`}
                         >
-                          {isExact ? `Exact (${formatRupiah(suggestion)})` : formatRupiah(suggestion)}
+                          {formatRupiah(suggestion)}
                         </button>
                       );
                     })}
@@ -515,7 +514,7 @@ export default function PosCheckoutModal({
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Payment Received
+                    Payment Amount
                   </label>
                   {isCash && totalAmount > 0 && (
                     <button
@@ -543,20 +542,22 @@ export default function PosCheckoutModal({
               </div>
 
               {/* Change Display */}
-              {isCash && effectivePaymentReceived > 0 && (
+              {isCash && (
                 <div
-                  className={`p-3 rounded-lg border text-xs flex justify-between items-center ${
-                    effectivePaymentReceived < totalAmount
+                  className={`p-3 rounded-lg border text-xs flex justify-between items-center transition-colors ${
+                    effectivePaymentReceived > 0 && effectivePaymentReceived < totalAmount
                       ? "bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-900/60 text-red-700 dark:text-red-300"
                       : "bg-green-50 dark:bg-green-950/40 border-green-200 dark:border-green-900/60 text-green-700 dark:text-green-300"
                   }`}
                 >
                   <span className="font-semibold">
-                    {effectivePaymentReceived < totalAmount ? "Insufficient Payment" : "Change (Kembalian)"}
+                    {effectivePaymentReceived > 0 && effectivePaymentReceived < totalAmount
+                      ? "Insufficient Payment"
+                      : "Change"}
                   </span>
                   <span className="font-bold text-sm">
-                    {effectivePaymentReceived < totalAmount
-                      ? formatRupiah(totalAmount - effectivePaymentReceived)
+                    {effectivePaymentReceived > 0 && effectivePaymentReceived < totalAmount
+                      ? `-${formatRupiah(totalAmount - effectivePaymentReceived)}`
                       : formatRupiah(change)}
                   </span>
                 </div>

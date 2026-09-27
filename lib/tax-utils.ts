@@ -129,67 +129,57 @@ export function computeReceiptFinancialSummary(
 }
 
 /**
- * Generates practical, rounded payment amount suggestions above the Grand Total.
- * Examples for Grand Total:
- * - Exact Grand Total (e.g. Rp 52.500)
- * - Next round 10.000 / 20.000 / 50.000 / 100.000 denominations
+ * Generates practical, rounded payment amount suggestions equal to or higher than the Grand Total.
+ * Suggestions are dynamically calculated using practical currency rounding increments.
+ *
+ * For example:
+ * - Grand Total = Rp 87,500 -> Rp 90,000, Rp 100,000, Rp 110,000
+ * - Grand Total = Rp 102,500 -> Rp 105,000, Rp 110,000, Rp 120,000
+ * - Grand Total = Rp 100,000 -> Rp 100,000, Rp 110,000, Rp 120,000
  */
 export function generatePaymentSuggestions(grandTotal: number): number[] {
   const total = Math.round(grandTotal);
   if (total <= 0) return [];
 
-  const suggestions = new Set<number>();
+  const candidates = new Set<number>();
 
-  // 1. Exact amount is always the first suggestion
-  suggestions.add(total);
-
-  // Determine appropriate rounding increments based on size of total
-  const candidates: number[] = [];
-
-  // Round up to nearest 5.000 if total > 5.000
-  if (total % 5000 !== 0) {
-    candidates.push(Math.ceil(total / 5000) * 5000);
+  // If total is already a practical round denomination (multiple of 5,000 or 10,000), it can be a suggestion
+  if (total % 5000 === 0) {
+    candidates.add(total);
   }
 
-  // Round up to nearest 10.000
-  if (total % 10000 !== 0 || total < 10000) {
-    candidates.push(Math.ceil(total / 10000) * 10000);
+  // Next round 5.000 increment
+  candidates.add(Math.ceil(total / 5000) * 5000);
+
+  // Next round 10.000 increment
+  candidates.add(Math.ceil(total / 10000) * 10000);
+
+  // Next round 20.000 increment
+  candidates.add(Math.ceil(total / 20000) * 20000);
+
+  // Next round 50.000 increment
+  candidates.add(Math.ceil(total / 50000) * 50000);
+
+  // Next round 100.000 increment
+  candidates.add(Math.ceil(total / 100000) * 100000);
+
+  // Common stepping bills above nearest 10k/50k
+  const base10k = Math.ceil(total / 10000) * 10000;
+  candidates.add(base10k + 10000);
+  candidates.add(base10k + 20000);
+
+  if (total >= 100000) {
+    const base50k = Math.ceil(total / 50000) * 50000;
+    candidates.add(base50k + 50000);
+    const base100k = Math.ceil(total / 100000) * 100000;
+    candidates.add(base100k + 50000);
+    candidates.add(base100k + 100000);
   }
 
-  // Round up to nearest 20.000
-  candidates.push(Math.ceil(total / 20000) * 20000);
-
-  // Round up to nearest 50.000
-  candidates.push(Math.ceil(total / 50000) * 50000);
-
-  // Round up to nearest 100.000
-  candidates.push(Math.ceil(total / 100000) * 100000);
-
-  // Indonesian bank notes: 10k, 20k, 50k, 100k, multiple 100k
-  const bankNotes = [10000, 20000, 50000, 100000, 200000, 300000, 500000];
-  for (const note of bankNotes) {
-    if (note >= total) {
-      candidates.push(note);
-    }
-  }
-
-  // Add next round multiplier if total is large
-  if (total > 100000) {
-    const nextHundred = Math.ceil(total / 100000) * 100000;
-    candidates.push(nextHundred);
-    candidates.push(nextHundred + 50000);
-    candidates.push(nextHundred + 100000);
-  }
-
-  // Sort and pick clean suggestions strictly > total (plus the exact total already added)
-  const sortedAbove = Array.from(new Set(candidates))
-    .filter((amt) => amt > total)
+  // Filter only practical rounded amounts >= total
+  const sorted = Array.from(candidates)
+    .filter((amt) => amt >= total)
     .sort((a, b) => a - b);
 
-  for (const amt of sortedAbove) {
-    suggestions.add(amt);
-    if (suggestions.size >= 5) break; // Max 5 suggestion chips
-  }
-
-  return Array.from(suggestions);
+  return sorted.slice(0, 4);
 }

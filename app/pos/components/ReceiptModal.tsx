@@ -222,40 +222,49 @@ export default function ReceiptModal({
 
             {/* Standardized Customer-Facing Tax & Discount Breakdown */}
             <div className="py-2.5 border-b border-dashed border-slate-300 space-y-1.5 text-[11px]">
-              <div className="flex justify-between text-slate-700">
-                <span>Normal Price</span>
-                <span className="font-medium text-slate-900">
-                  {formatRupiah(summary.normalPrice)}
-                </span>
+              {/* Block 1: Price and Discount Summary */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-slate-700">
+                  <span>Normal Price</span>
+                  <span className="font-medium text-slate-900">
+                    {formatRupiah(summary.normalPrice)}
+                  </span>
+                </div>
+
+                <div className="flex justify-between text-slate-700 font-medium">
+                  <span>Discount</span>
+                  <span className="text-slate-900">
+                    {formatRupiah(summary.discount)}
+                  </span>
+                </div>
+
+                <div className="flex justify-between text-slate-700 font-medium pt-0.5">
+                  <span>Price After Discount</span>
+                  <span className="font-semibold text-slate-900">
+                    {formatRupiah(summary.priceAfterDiscount)}
+                  </span>
+                </div>
               </div>
 
-              <div className="flex justify-between text-slate-700 font-medium">
-                <span>Discount</span>
-                <span className={summary.discount > 0 ? "text-slate-950 font-bold" : "text-slate-900"}>
-                  {summary.discount > 0 ? `-${formatRupiah(summary.discount)}` : formatRupiah(0)}
-                </span>
-              </div>
+              {/* Visual space between Price Summary and Tax Breakdown */}
+              <div className="pt-2 border-t border-dotted border-slate-200" />
 
-              <div className="flex justify-between text-slate-700 font-medium pt-1 border-t border-dotted border-slate-200">
-                <span>Price After Discount</span>
-                <span className="font-semibold text-slate-900">
-                  {formatRupiah(summary.priceAfterDiscount)}
-                </span>
-              </div>
+              {/* Block 2: Reverse Tax Reconciliation */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-slate-600 text-[10.5px]">
+                  <span>Pre-Tax Amount</span>
+                  <span>{formatRupiah(summary.preTaxAmount)}</span>
+                </div>
 
-              <div className="flex justify-between text-slate-600 text-[10.5px]">
-                <span>Pre-Tax Amount</span>
-                <span>{formatRupiah(summary.preTaxAmount)}</span>
-              </div>
+                <div className="flex justify-between text-slate-600 text-[10.5px]">
+                  <span>Tax</span>
+                  <span>{formatRupiah(summary.tax)}</span>
+                </div>
 
-              <div className="flex justify-between text-slate-600 text-[10.5px]">
-                <span>Tax</span>
-                <span>{formatRupiah(summary.tax)}</span>
-              </div>
-
-              <div className="flex justify-between text-slate-950 font-bold text-sm pt-1.5 border-t border-slate-300">
-                <span>Total After Tax</span>
-                <span>{formatRupiah(summary.totalAfterTax)}</span>
+                <div className="flex justify-between text-slate-950 font-bold text-sm pt-1 border-t border-slate-300">
+                  <span>Total After Tax</span>
+                  <span>{formatRupiah(summary.totalAfterTax)}</span>
+                </div>
               </div>
             </div>
 

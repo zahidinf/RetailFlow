@@ -18,21 +18,29 @@ async function runCheckoutAndReceiptTests() {
   // ==========================================
   console.log("[TEST 1] Testing Payment Amount Suggestions Algorithm...");
 
-  const testTotals = [12500, 35000, 52500, 100000, 187400, 520000];
+  // Verify the exact prompt examples:
+  // Grand Total = Rp87,500 => [90000, 100000, 110000]
+  const sugg87500 = generatePaymentSuggestions(87500);
+  if (!sugg87500.includes(90000) || !sugg87500.includes(100000) || !sugg87500.includes(110000)) {
+    throw new Error(`Expected suggestions for 87500 to include 90000, 100000, 110000, got ${sugg87500}`);
+  }
+
+  // Grand Total = Rp102,500 => [105000, 110000, 120000]
+  const sugg102500 = generatePaymentSuggestions(102500);
+  if (!sugg102500.includes(105000) || !sugg102500.includes(110000) || !sugg102500.includes(120000)) {
+    throw new Error(`Expected suggestions for 102500 to include 105000, 110000, 120000, got ${sugg102500}`);
+  }
+
+  const testTotals = [12500, 35000, 52500, 87500, 100000, 102500, 187400, 520000];
   for (const total of testTotals) {
     const suggestions = generatePaymentSuggestions(total);
 
-    // Rule 1: First suggestion must be exact total
-    if (suggestions[0] !== total) {
-      throw new Error(`Expected first suggestion to be exact total ${total}, got ${suggestions[0]}`);
-    }
-
-    // Rule 2: Subsequent suggestions must be strictly > total
-    for (let i = 1; i < suggestions.length; i++) {
-      if (suggestions[i] <= total) {
-        throw new Error(`Suggestion ${suggestions[i]} is not greater than grand total ${total}`);
+    // Rule: All suggestions must be practical rounded amounts >= Grand Total
+    for (let i = 0; i < suggestions.length; i++) {
+      if (suggestions[i] < total) {
+        throw new Error(`Suggestion ${suggestions[i]} is lower than grand total ${total}`);
       }
-      if (suggestions[i] <= suggestions[i - 1]) {
+      if (i > 0 && suggestions[i] <= suggestions[i - 1]) {
         throw new Error(`Suggestions not strictly increasing: ${suggestions.join(", ")}`);
       }
     }
@@ -45,7 +53,7 @@ async function runCheckoutAndReceiptTests() {
   let suggestions1 = generatePaymentSuggestions(currentGrandTotal);
   currentGrandTotal = 45000; // Promo applied
   let suggestions2 = generatePaymentSuggestions(currentGrandTotal);
-  if (suggestions1[0] === suggestions2[0]) {
+  if (suggestions1[0] === suggestions2[0] && suggestions1[1] === suggestions2[1]) {
     throw new Error("Suggestions did not update when Grand Total changed!");
   }
   console.log("  ✓ Dynamic recalculation on Grand Total change verified successfully.\n");
