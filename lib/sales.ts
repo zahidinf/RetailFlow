@@ -210,6 +210,7 @@ export async function createSaleTransaction(input: CreateSaleInput) {
                 sku: true,
                 name: true,
                 unit: true,
+                sellingPrice: true,
               },
             },
           },
@@ -260,6 +261,10 @@ export async function createSaleTransaction(input: CreateSaleInput) {
         unitPrice: Number(i.unitPrice),
         totalPrice: Number(i.totalPrice),
         discount: Number(i.discount),
+        product: {
+          ...i.product,
+          sellingPrice: Number(i.product.sellingPrice),
+        },
       })),
       promotions: (sale.promotions || []).map((p) => ({
         ...p,
@@ -400,11 +405,13 @@ export async function getSaleDetailById(saleId: string) {
               barcode: true,
               name: true,
               unit: true,
+              sellingPrice: true,
               refundable: true,
             },
           },
         },
       },
+      promotions: true,
       refunds: {
         orderBy: { createdAt: "desc" },
         include: {
@@ -451,6 +458,15 @@ export async function getSaleDetailById(saleId: string) {
       ...i,
       unitPrice: Number(i.unitPrice),
       totalPrice: Number(i.totalPrice),
+      discount: Number(i.discount),
+      product: {
+        ...i.product,
+        sellingPrice: Number(i.product.sellingPrice),
+      },
+    })),
+    promotions: (sale.promotions || []).map((p) => ({
+      ...p,
+      discountAmount: Number(p.discountAmount),
     })),
     refunds: sale.refunds.map((r) => ({
       ...r,

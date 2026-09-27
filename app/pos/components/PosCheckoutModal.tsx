@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { formatRupiah, calculateReverseTax } from "@/lib/tax-utils";
+import { useState, useMemo } from "react";
+import { formatRupiah, calculateReverseTax, generatePaymentSuggestions } from "@/lib/tax-utils";
 import ProductImage from "@/app/components/ProductImage";
 import { PosProduct } from "./PosTerminal";
 import { PromotionEligibility } from "@/lib/promotions-engine";
@@ -58,7 +58,13 @@ export default function PosCheckoutModal({
 
   if (!isOpen) return null;
 
-  const { preTaxAmount, taxAmount, totalAmount } = calculateReverseTax(finalSubtotal);
+  // Single authoritative reverse tax calculation
+  const { preTaxAmount, taxAmount, totalAmount, taxRate } = calculateReverseTax(finalSubtotal);
+
+  // Dynamic payment suggestions recalculated whenever Grand Total changes
+  const paymentSuggestions = useMemo(() => {
+    return generatePaymentSuggestions(totalAmount);
+  }, [totalAmount]);
 
   const isCash = paymentMethod === "CASH";
   const effectivePaymentReceived = isCash
@@ -75,6 +81,10 @@ export default function PosCheckoutModal({
     }
     const num = Number(raw);
     setPaymentInput(num.toLocaleString("id-ID"));
+  };
+
+  const handleSelectSuggestion = (amount: number) => {
+    setPaymentInput(amount.toLocaleString("id-ID"));
   };
 
   const handleSetExact = () => {
@@ -418,11 +428,11 @@ export default function PosCheckoutModal({
               {/* Price & Tax details */}
               <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
                 <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                  <span>Price Before Tax (Pre-tax)</span>
+                  <span>Price Before Tax (Pre-Tax)</span>
                   <span className="font-medium text-slate-900 dark:text-white">{formatRupiah(preTaxAmount)}</span>
                 </div>
                 <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                  <span>PPN 11% (Included)</span>
+                  <span>Tax (PPN {Math.round(taxRate * 100)}% Included)</span>
                   <span className="font-medium text-slate-900 dark:text-white">{formatRupiah(taxAmount)}</span>
                 </div>
                 {totalDiscount > 0 && (
@@ -464,6 +474,42 @@ export default function PosCheckoutModal({
                   ))}
                 </div>
               </div>
+
+              {/* Dynamic Payment Amount Suggestions (Cash payment) */}
+              {isCash && totalAmount > 0 && paymentSuggestions.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Payment Suggestions
+                    </label>
+                    <span className="text-[10px] text-slate-400">Click to apply</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {paymentSuggestions.map((suggestion) => {
+                      const isExact = suggestion === totalAmount;
+                      const isCurrentInput =
+                        effectivePaymentReceived === suggestion && paymentInput !== "";
+
+                      return (
+                        <button
+                          key={suggestion}
+                          type="button"
+                          onClick={() => handleSelectSuggestion(suggestion)}
+                          className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all ${
+                            isCurrentInput
+                              ? "bg-blue-600 text-white border-blue-600 shadow-xs ring-2 ring-blue-300 dark:ring-blue-900"
+                              : isExact
+                              ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100"
+                              : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 hover:border-slate-300"
+                          }`}
+                        >
+                          {isExact ? `Exact (${formatRupiah(suggestion)})` : formatRupiah(suggestion)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Payment Amount Input */}
               <div>

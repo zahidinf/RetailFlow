@@ -21,7 +21,18 @@
 - Integrated receipt popup displaying transaction breakdown.
 - Full physical inventory reduction including free promo items.
 
-### 3. Verification & Compatibility
+### 3. POS Payment Suggestions & Receipt Tax Breakdown Enhancement
+- **Dynamic Payment Suggestions**: Practical, clickable tender suggestion amounts generated dynamically above the Grand Total, with real-time change calculation and manual input support.
+- **Unified Customer-Facing Receipt Breakdown**:
+  - `Normal Price`
+  - `Discount` (consolidated single amount encompassing regular discounts, promotions, Buy X Get Y free items, and Tebus Murah special prices)
+  - `Price After Discount`
+  - `Pre-Tax Amount`
+  - `Tax`
+  - `Total After Tax`
+- **Strict Reconciliation**: `Price After Discount = Normal Price - Discount`, `Total After Tax = Pre-Tax Amount + Tax = Actual Grand Total`. Configurable reverse tax computation from tax-inclusive retail pricing.
+
+### 4. Verification & Compatibility
 - Full TypeScript type check passed.
 - Next.js production build (`npm run build`) succeeded without warnings.
 - End-to-end promotion and POS integration test suite passed.

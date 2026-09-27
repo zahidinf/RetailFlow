@@ -1,17 +1,24 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { calculateReverseTax, formatRupiah } from "@/lib/tax-utils";
+import {
+  formatRupiah,
+  computeReceiptFinancialSummary,
+  DEFAULT_TAX_RATE,
+} from "@/lib/tax-utils";
 
 export interface ReceiptSaleItem {
   id: string;
   quantity: number;
   unitPrice: number;
   totalPrice: number;
+  discount?: number;
+  isFreeReward?: boolean;
   product: {
     sku: string;
     name: string;
     unit?: string;
+    sellingPrice?: number;
   };
 }
 
@@ -29,14 +36,20 @@ export interface ReceiptSale {
     email: string;
   };
   items: ReceiptSaleItem[];
+  promotions?: any[];
 }
 
 interface ReceiptModalProps {
   sale: ReceiptSale;
   onClose: () => void;
+  taxRate?: number;
 }
 
-export default function ReceiptModal({ sale, onClose }: ReceiptModalProps) {
+export default function ReceiptModal({
+  sale,
+  onClose,
+  taxRate = DEFAULT_TAX_RATE,
+}: ReceiptModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
 
   // Close on Escape key
@@ -54,10 +67,6 @@ export default function ReceiptModal({ sale, onClose }: ReceiptModalProps) {
     window.print();
   };
 
-  const { preTaxAmount, taxAmount, totalAmount } = calculateReverseTax(
-    sale.totalAmount
-  );
-
   const formattedDate = new Date(sale.createdAt).toLocaleString("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -68,6 +77,11 @@ export default function ReceiptModal({ sale, onClose }: ReceiptModalProps) {
     : "Cashier";
 
   const totalItemsCount = sale.items.reduce((sum, item) => sum + item.quantity, 0);
+
+  // Customer-facing unified financial summary:
+  // Normal Price, Discount, Price After Discount, Pre-Tax Amount, Tax, Total After Tax
+  const summary = computeReceiptFinancialSummary(sale.items, sale.totalAmount, taxRate);
+  const taxPercentLabel = `${Math.round(taxRate * 100)}%`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs overflow-y-auto">
@@ -182,46 +196,66 @@ export default function ReceiptModal({ sale, onClose }: ReceiptModalProps) {
                 <span>ITEM</span>
                 <span>TOTAL</span>
               </div>
-              {sale.items.map((item) => (
-                <div key={item.id} className="text-[11px]">
-                  <div className="font-medium text-slate-900 leading-snug">
-                    {item.product.name}
+              {sale.items.map((item) => {
+                const isFree = item.isFreeReward || item.totalPrice === 0;
+
+                return (
+                  <div key={item.id} className="text-[11px]">
+                    <div className="font-medium text-slate-900 leading-snug">
+                      {item.product.name}
+                      {item.isFreeReward && (
+                        <span className="ml-1 text-[10px] font-bold text-slate-700">(FREE)</span>
+                      )}
+                    </div>
+                    <div className="flex justify-between text-slate-600 pl-1 mt-0.5">
+                      <span>
+                        {item.quantity} x {formatRupiah(item.unitPrice)}
+                      </span>
+                      <span className="font-semibold text-slate-900">
+                        {isFree ? "FREE" : formatRupiah(item.totalPrice)}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex justify-between text-slate-600 pl-1 mt-0.5">
-                    <span>
-                      {item.quantity} x {formatRupiah(item.unitPrice)}
-                    </span>
-                    <span className="font-semibold text-slate-900">
-                      {formatRupiah(item.totalPrice)}
-                    </span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
-            {/* Tax Breakdown & Totals */}
+            {/* Standardized Customer-Facing Tax & Discount Breakdown */}
             <div className="py-2.5 border-b border-dashed border-slate-300 space-y-1.5 text-[11px]">
-              <div className="flex justify-between text-slate-600">
-                <span>Subtotal ({totalItemsCount} {totalItemsCount === 1 ? "item" : "items"})</span>
+              <div className="flex justify-between text-slate-700">
+                <span>Normal Price</span>
                 <span className="font-medium text-slate-900">
-                  {formatRupiah(totalAmount)}
+                  {formatRupiah(summary.normalPrice)}
                 </span>
               </div>
-              <div className="flex justify-between text-slate-600">
-                <span>Price Before Tax</span>
-                <span className="font-medium text-slate-900">
-                  {formatRupiah(preTaxAmount)}
+
+              <div className="flex justify-between text-slate-700 font-medium">
+                <span>Discount</span>
+                <span className={summary.discount > 0 ? "text-slate-950 font-bold" : "text-slate-900"}>
+                  {summary.discount > 0 ? `-${formatRupiah(summary.discount)}` : formatRupiah(0)}
                 </span>
               </div>
-              <div className="flex justify-between text-slate-600">
-                <span>PPN 11% (Included)</span>
-                <span className="font-medium text-slate-900">
-                  {formatRupiah(taxAmount)}
+
+              <div className="flex justify-between text-slate-700 font-medium pt-1 border-t border-dotted border-slate-200">
+                <span>Price After Discount</span>
+                <span className="font-semibold text-slate-900">
+                  {formatRupiah(summary.priceAfterDiscount)}
                 </span>
               </div>
-              <div className="flex justify-between text-slate-950 font-bold text-sm pt-1.5 border-t border-slate-200">
-                <span>Grand Total</span>
-                <span>{formatRupiah(totalAmount)}</span>
+
+              <div className="flex justify-between text-slate-600 text-[10.5px]">
+                <span>Pre-Tax Amount</span>
+                <span>{formatRupiah(summary.preTaxAmount)}</span>
+              </div>
+
+              <div className="flex justify-between text-slate-600 text-[10.5px]">
+                <span>Tax</span>
+                <span>{formatRupiah(summary.tax)}</span>
+              </div>
+
+              <div className="flex justify-between text-slate-950 font-bold text-sm pt-1.5 border-t border-slate-300">
+                <span>Total After Tax</span>
+                <span>{formatRupiah(summary.totalAfterTax)}</span>
               </div>
             </div>
 
@@ -244,7 +278,7 @@ export default function ReceiptModal({ sale, onClose }: ReceiptModalProps) {
             {/* Footer Notes */}
             <div className="pt-3 text-center text-[10px] text-slate-500 space-y-1">
               <p className="font-medium text-slate-700">
-                * All prices are tax-inclusive (PPN 11%) *
+                * All prices are tax-inclusive (PPN {taxPercentLabel}) *
               </p>
               <p>Thank you for your purchase!</p>
               <p>Items purchased cannot be returned or exchanged</p>
@@ -267,12 +301,7 @@ export default function ReceiptModal({ sale, onClose }: ReceiptModalProps) {
             className="px-4 py-2 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-colors flex items-center gap-1.5"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"
-              />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
             </svg>
             Print Receipt
           </button>

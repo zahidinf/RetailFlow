@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.1.0] - 2026-09-27
 
+### Enhanced
+- **POS Payment Amount Suggestions**:
+  - Dynamic payment suggestions algorithm based on current Grand Total generating practical rounded denominations above total.
+  - Interactive clickable suggestion chips populating the Payment Received field with instant change recalculation.
+  - Dynamic re-evaluation of payment suggestions whenever Grand Total updates from cart changes, discounts, Buy X Get Y, or Tebus Murah.
+- **Customer Receipt / Nota Financial Breakdown**:
+  - Standardized customer-facing financial layout: `Normal Price`, `Discount`, `Price After Discount`, `Pre-Tax Amount`, `Tax`, `Total After Tax`.
+  - Consolidated single `Discount` line uniting regular line discounts, promotional percentage/nominal cuts, Buy X Get Y free items, and Tebus Murah special pricing.
+  - Strict mathematical reconciliation: `Price After Discount = Normal Price - Discount`, `Total After Tax = Pre-Tax Amount + Tax`, `Total After Tax = Actual Grand Total`.
+  - Reverse tax calculation using configured tax rate with tax-inclusive retail pricing.
+
 ### Added
 - **Promotion Management Module**:
   - Full CRUD lifecycle for promotional campaigns (`/admin/promotions`).
