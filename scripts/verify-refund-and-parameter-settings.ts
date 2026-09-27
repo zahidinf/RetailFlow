@@ -7,6 +7,8 @@ import {
   validateParameterInput,
   getParameterSettings,
   getRefundValidityPeriodHours,
+  getRefundValidityPeriodConfig,
+  getRefundValidityPeriodMs,
 } from "../lib/parameter-settings";
 import {
   isValidMasterUnit,
@@ -17,11 +19,14 @@ import {
   TIME_UNITS,
   getParameterUnitType,
   convertTimeToHours,
+  convertTimeToMs,
 } from "../lib/units";
 import {
   processRefund,
   getEligibleRefundManagers,
   checkSaleRefundEligibility,
+  isItemRefundEligible,
+  isTransactionWithinRefundValidity,
 } from "../lib/refund";
 import { createSaleTransaction } from "../lib/sales";
 
@@ -136,6 +141,20 @@ async function runTests() {
     assert(convertTimeToHours(2, "days") === 48, "convertTimeToHours 2 days = 48");
     assert(convertTimeToHours(120, "minutes") === 2, "convertTimeToHours 120 minutes = 2");
     assert(convertTimeToHours(7200, "seconds") === 2, "convertTimeToHours 7200 seconds = 2");
+
+    // Duration conversion to milliseconds (consistent internal time representation)
+    assert(convertTimeToMs(30, "seconds") === 30000, "convertTimeToMs 30 seconds = 30,000 ms");
+    assert(convertTimeToMs(15, "minutes") === 900000, "convertTimeToMs 15 minutes = 900,000 ms");
+    assert(convertTimeToMs(24, "hours") === 86400000, "convertTimeToMs 24 hours = 86,400,000 ms");
+    assert(convertTimeToMs(2, "days") === 172800000, "convertTimeToMs 2 days = 172,800,000 ms");
+
+    const validityConfig = await getRefundValidityPeriodConfig();
+    assert(validityConfig.validityPeriodMs === 86400000, "Default validity config is 86,400,000 ms (24h)");
+    assert(validityConfig.unit === "Hours", "Default validity config unit is 'Hours'");
+    assert(validityConfig.value === 24, "Default validity config value is 24");
+
+    const validityMs = await getRefundValidityPeriodMs();
+    assert(validityMs === 86400000, "getRefundValidityPeriodMs() returns 86,400,000 ms");
 
     // General Parameter validation tests
     const validMasterUnitErr = validateParameterInput("SOME_SETTING", "10", "PCS");
@@ -555,6 +574,186 @@ async function runTests() {
     // Clean up test old sale
     await prisma.saleItem.deleteMany({ where: { saleId: oldSale.id } });
     await prisma.sale.delete({ where: { id: oldSale.id } });
+
+    // ----------------------------------------------------
+    // TEST 9: Exact Boundary Condition & Item Refundability
+    // ----------------------------------------------------
+    console.log("\n[9] Verifying Exact Boundary Condition & Item Refundability...");
+    const testValidityMs = 60000; // 60 seconds
+    const baseTime = 1000000;
+
+    // Boundary condition: age <= validityPeriod is eligible; age > validityPeriod is ineligible
+    assert(
+      isTransactionWithinRefundValidity(baseTime, testValidityMs, baseTime + testValidityMs),
+      "Boundary: transaction age exactly equal to validity period (elapsed == validity) is eligible"
+    );
+    assert(
+      isTransactionWithinRefundValidity(baseTime, testValidityMs, baseTime + testValidityMs - 1),
+      "Boundary: transaction age 1ms inside validity period is eligible"
+    );
+    assert(
+      !isTransactionWithinRefundValidity(baseTime, testValidityMs, baseTime + testValidityMs + 1),
+      "Boundary: transaction age 1ms beyond validity period is NOT eligible"
+    );
+
+    // Item-level refundability requires BOTH product.refundable === true AND within validity period
+    const refundableItem = { product: { refundable: true }, quantity: 2, refundedQuantity: 0 };
+    const nonRefundableItem = { product: { refundable: false }, quantity: 2, refundedQuantity: 0 };
+    const fullyRefundedItem = { product: { refundable: true }, quantity: 2, refundedQuantity: 2 };
+
+    assert(
+      isItemRefundEligible(refundableItem, baseTime, testValidityMs, baseTime + 10000),
+      "Item refundable: product.refundable=true AND transaction within validity period"
+    );
+    assert(
+      !isItemRefundEligible(nonRefundableItem, baseTime, testValidityMs, baseTime + 10000),
+      "Item non-refundable: product.refundable=false rejected even within validity period"
+    );
+    assert(
+      !isItemRefundEligible(refundableItem, baseTime, testValidityMs, baseTime + testValidityMs + 1000),
+      "Item non-refundable: product.refundable=true rejected when transaction validity expired"
+    );
+    assert(
+      !isItemRefundEligible(nonRefundableItem, baseTime, testValidityMs, baseTime + testValidityMs + 1000),
+      "Item non-refundable: both non-refundable and expired rejected"
+    );
+    assert(
+      !isItemRefundEligible(fullyRefundedItem, baseTime, testValidityMs, baseTime + 10000),
+      "Item non-refundable: remaining quantity <= 0 rejected"
+    );
+
+    // ----------------------------------------------------
+    // TEST 10: Multi-Unit Dynamic Validity Periods (seconds, minutes, hours, days)
+    // ----------------------------------------------------
+    console.log("\n[10] Verifying Dynamic Validity Units (seconds, minutes, hours, days)...");
+
+    // Sub-test 10A: Seconds unit
+    await prisma.parameterSetting.update({
+      where: { code: PARAM_REFUND_VALIDITY_PERIOD },
+      data: { value: "30", unit: "seconds" },
+    });
+    const secConfig = await getRefundValidityPeriodConfig();
+    assert(secConfig.validityPeriodMs === 30000, "Configured 30 seconds = 30,000 ms");
+
+    // Sale created 10 seconds ago -> eligible
+    const recentSaleSec = await prisma.sale.create({
+      data: {
+        saleNumber: `SALE-SEC-${Date.now()}`,
+        cashierId: cashier!.id,
+        totalAmount: 15000,
+        createdAt: new Date(Date.now() - 10 * 1000),
+        items: {
+          create: [{ productId: refProduct.id, quantity: 1, unitPrice: 15000, totalPrice: 15000 }],
+        },
+      },
+    });
+    const secEligible = await checkSaleRefundEligibility(recentSaleSec.id);
+    assert(secEligible.eligible === true, "Sale 10s old is eligible under 30s validity period");
+
+    // Sale created 45 seconds ago -> expired
+    const expiredSaleSec = await prisma.sale.create({
+      data: {
+        saleNumber: `SALE-SEC-EXP-${Date.now()}`,
+        cashierId: cashier!.id,
+        totalAmount: 15000,
+        createdAt: new Date(Date.now() - 45 * 1000),
+        items: {
+          create: [{ productId: refProduct.id, quantity: 1, unitPrice: 15000, totalPrice: 15000 }],
+        },
+      },
+    });
+    const secExpired = await checkSaleRefundEligibility(expiredSaleSec.id);
+    assert(secExpired.eligible === false, "Sale 45s old is NOT eligible under 30s validity period");
+
+    // Sub-test 10B: Minutes unit
+    await prisma.parameterSetting.update({
+      where: { code: PARAM_REFUND_VALIDITY_PERIOD },
+      data: { value: "5", unit: "minutes" },
+    });
+    const minConfig = await getRefundValidityPeriodConfig();
+    assert(minConfig.validityPeriodMs === 300000, "Configured 5 minutes = 300,000 ms");
+
+    const recentSaleMin = await prisma.sale.create({
+      data: {
+        saleNumber: `SALE-MIN-${Date.now()}`,
+        cashierId: cashier!.id,
+        totalAmount: 15000,
+        createdAt: new Date(Date.now() - 2 * 60 * 1000),
+        items: {
+          create: [{ productId: refProduct.id, quantity: 1, unitPrice: 15000, totalPrice: 15000 }],
+        },
+      },
+    });
+    const minEligible = await checkSaleRefundEligibility(recentSaleMin.id);
+    assert(minEligible.eligible === true, "Sale 2m old is eligible under 5m validity period");
+
+    const expiredSaleMin = await prisma.sale.create({
+      data: {
+        saleNumber: `SALE-MIN-EXP-${Date.now()}`,
+        cashierId: cashier!.id,
+        totalAmount: 15000,
+        createdAt: new Date(Date.now() - 10 * 60 * 1000),
+        items: {
+          create: [{ productId: refProduct.id, quantity: 1, unitPrice: 15000, totalPrice: 15000 }],
+        },
+      },
+    });
+    const minExpired = await checkSaleRefundEligibility(expiredSaleMin.id);
+    assert(minExpired.eligible === false, "Sale 10m old is NOT eligible under 5m validity period");
+
+    // Sub-test 10C: Days unit
+    await prisma.parameterSetting.update({
+      where: { code: PARAM_REFUND_VALIDITY_PERIOD },
+      data: { value: "3", unit: "days" },
+    });
+    const daysConfig = await getRefundValidityPeriodConfig();
+    assert(daysConfig.validityPeriodMs === 3 * 86400000, "Configured 3 days = 259,200,000 ms");
+
+    const recentSaleDays = await prisma.sale.create({
+      data: {
+        saleNumber: `SALE-DAYS-${Date.now()}`,
+        cashierId: cashier!.id,
+        totalAmount: 15000,
+        createdAt: new Date(Date.now() - 1 * 86400000),
+        items: {
+          create: [{ productId: refProduct.id, quantity: 1, unitPrice: 15000, totalPrice: 15000 }],
+        },
+      },
+    });
+    const daysEligible = await checkSaleRefundEligibility(recentSaleDays.id);
+    assert(daysEligible.eligible === true, "Sale 1 day old is eligible under 3 days validity period");
+
+    const expiredSaleDays = await prisma.sale.create({
+      data: {
+        saleNumber: `SALE-DAYS-EXP-${Date.now()}`,
+        cashierId: cashier!.id,
+        totalAmount: 15000,
+        createdAt: new Date(Date.now() - 5 * 86400000),
+        items: {
+          create: [{ productId: refProduct.id, quantity: 1, unitPrice: 15000, totalPrice: 15000 }],
+        },
+      },
+    });
+    const daysExpired = await checkSaleRefundEligibility(expiredSaleDays.id);
+    assert(daysExpired.eligible === false, "Sale 5 days old is NOT eligible under 3 days validity period");
+
+    // Clean up temporary sales
+    const tempSaleIds = [
+      recentSaleSec.id,
+      expiredSaleSec.id,
+      recentSaleMin.id,
+      expiredSaleMin.id,
+      recentSaleDays.id,
+      expiredSaleDays.id,
+    ];
+    await prisma.saleItem.deleteMany({ where: { saleId: { in: tempSaleIds } } });
+    await prisma.sale.deleteMany({ where: { id: { in: tempSaleIds } } });
+
+    // Restore parameter setting to default 24 Hours
+    await prisma.parameterSetting.update({
+      where: { code: PARAM_REFUND_VALIDITY_PERIOD },
+      data: { value: "24", unit: "Hours" },
+    });
 
     console.log("\n==================================================================");
     console.log(`=== TEST SUMMARY: ${passed} PASSED, ${failed} FAILED               ===`);

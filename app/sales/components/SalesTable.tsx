@@ -43,9 +43,10 @@ interface Props {
   initialSales: SaleSummary[];
   cashiers: { id: string; name: string }[];
   canViewAll: boolean;
+  validityPeriodMs?: number;
 }
 
-export default function SalesTable({ initialSales, cashiers, canViewAll }: Props) {
+export default function SalesTable({ initialSales, cashiers, canViewAll, validityPeriodMs }: Props) {
   const { hasPermission, isSuperAdmin } = usePermissions();
   const canRefund =
     isSuperAdmin ||
@@ -192,12 +193,16 @@ export default function SalesTable({ initialSales, cashiers, canViewAll }: Props
   const isSaleEligibleForRefund = (sale: any) => {
     if (!sale) return false;
     if (sale.status === "VOID" || sale.status === "REFUNDED") return false;
-    const hasRemainingItems = sale.items.some(
+    if (sale.isRefundExpired) return false;
+    if (validityPeriodMs && (Date.now() - new Date(sale.createdAt).getTime()) > validityPeriodMs) {
+      return false;
+    }
+    const hasRemainingItems = sale.items?.some(
       (item: any) =>
-        (item.product.refundable !== false) &&
+        item.product?.refundable === true &&
         item.quantity - (item.refundedQuantity || 0) > 0
     );
-    return hasRemainingItems;
+    return Boolean(hasRemainingItems);
   };
 
   return (
@@ -449,7 +454,12 @@ export default function SalesTable({ initialSales, cashiers, canViewAll }: Props
                     {activeSaleDetail.items.map((i: any) => {
                       const refunded = i.refundedQuantity || 0;
                       const remaining = i.quantity - refunded;
-                      const isRefundable = i.product.refundable !== false;
+                      const isExpired =
+                        activeSaleDetail.isRefundExpired ||
+                        (validityPeriodMs &&
+                          Date.now() - new Date(activeSaleDetail.createdAt).getTime() > validityPeriodMs);
+                      const isProductRefundable = i.product.refundable === true;
+                      const isRefundable = isProductRefundable && !isExpired;
 
                       return (
                         <div key={i.id} className="p-3.5 flex items-center justify-between text-xs">
@@ -471,9 +481,13 @@ export default function SalesTable({ initialSales, cashiers, canViewAll }: Props
                               {formatRupiah(i.totalPrice)}
                             </div>
                             <div className="flex items-center gap-1.5 justify-end">
-                              {!isRefundable ? (
+                              {!isProductRefundable ? (
                                 <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-900">
                                   Non-refundable
+                                </span>
+                              ) : isExpired ? (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-900">
+                                  Validity Expired
                                 </span>
                               ) : refunded > 0 ? (
                                 <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-900">
@@ -575,6 +589,7 @@ export default function SalesTable({ initialSales, cashiers, canViewAll }: Props
       {isRefundModalOpen && activeSaleDetail && (
         <RefundModal
           sale={activeSaleDetail}
+          validityPeriodMs={validityPeriodMs}
           onClose={() => setIsRefundModalOpen(false)}
           onSuccess={handleRefundSuccess}
         />

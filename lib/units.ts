@@ -122,6 +122,25 @@ export function getParameterUnitType(code: string | null | undefined): UnitType 
 }
 
 /**
+ * Convert time duration value to milliseconds based on time unit.
+ */
+export function convertTimeToMs(value: number, unit?: string | null): number {
+  const normUnit = normalizeTimeUnit(unit) || "hours";
+  switch (normUnit) {
+    case "seconds":
+      return Math.round(value * 1000);
+    case "minutes":
+      return Math.round(value * 60 * 1000);
+    case "hours":
+      return Math.round(value * 3600 * 1000);
+    case "days":
+      return Math.round(value * 86400 * 1000);
+    default:
+      return Math.round(value * 3600 * 1000);
+  }
+}
+
+/**
  * Convert time duration value to hours based on time unit.
  */
 export function convertTimeToHours(value: number, unit?: string | null): number {

@@ -5,6 +5,7 @@ import { formatRupiah } from "@/lib/tax-utils";
 import {
   getEligibleManagersAction,
   processRefundAction,
+  checkSaleRefundEligibilityAction,
 } from "@/app/actions/sales-actions";
 import { EligibleManager } from "@/lib/refund";
 import { RefundReceiptData } from "./RefundReceiptModal";
@@ -31,6 +32,8 @@ export interface RefundableSale {
   paymentMethod: string;
   status: string;
   createdAt: string | Date;
+  isRefundExpired?: boolean;
+  validityPeriodMs?: number;
   cashier: {
     id: string;
     firstName: string;
@@ -42,13 +45,14 @@ export interface RefundableSale {
 
 interface Props {
   sale: RefundableSale;
+  validityPeriodMs?: number;
   onClose: () => void;
   onSuccess: (receipt: RefundReceiptData) => void;
 }
 
 type Step = "SELECT_ITEMS" | "CONFIRM_SUMMARY" | "MANAGER_AUTH";
 
-export default function RefundModal({ sale, onClose, onSuccess }: Props) {
+export default function RefundModal({ sale, validityPeriodMs, onClose, onSuccess }: Props) {
   const [step, setStep] = useState<Step>("SELECT_ITEMS");
 
   // Selected items map: saleItemId -> selected boolean
@@ -65,6 +69,23 @@ export default function RefundModal({ sale, onClose, onSuccess }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const effectiveValidityMs = validityPeriodMs ?? sale.validityPeriodMs;
+  const isTransactionExpired =
+    Boolean(sale.isRefundExpired) ||
+    Boolean(
+      effectiveValidityMs &&
+        Date.now() - new Date(sale.createdAt).getTime() > effectiveValidityMs
+    );
+
+  // Check backend eligibility on mount to ensure real-time validity check
+  useEffect(() => {
+    checkSaleRefundEligibilityAction(sale.id).then((res) => {
+      if (res.success && res.eligibility && !res.eligibility.eligible) {
+        setError(res.eligibility.reason || "This transaction is not eligible for refund");
+      }
+    });
+  }, [sale.id]);
+
   // Initialize selectable items
   useEffect(() => {
     const initialSelected: Record<string, boolean> = {};
@@ -72,14 +93,14 @@ export default function RefundModal({ sale, onClose, onSuccess }: Props) {
 
     sale.items.forEach((item) => {
       const remaining = item.quantity - (item.refundedQuantity || 0);
-      const isEligible = (item.product.refundable !== false) && remaining > 0;
+      const isEligible = !isTransactionExpired && item.product.refundable === true && remaining > 0;
       initialSelected[item.id] = false;
       initialQuantities[item.id] = isEligible ? Math.min(1, remaining) : 0;
     });
 
     setSelectedItems(initialSelected);
     setRefundQuantities(initialQuantities);
-  }, [sale]);
+  }, [sale, isTransactionExpired]);
 
   // Load eligible managers when navigating to manager auth
   const loadManagers = async () => {
@@ -132,6 +153,10 @@ export default function RefundModal({ sale, onClose, onSuccess }: Props) {
 
   const handleProceedToSummary = () => {
     setError(null);
+    if (isTransactionExpired) {
+      setError("Refund validity period has expired for this transaction");
+      return;
+    }
     if (itemsToRefund.length === 0) {
       setError("Please select at least one refundable item to continue");
       return;
@@ -288,8 +313,8 @@ export default function RefundModal({ sale, onClose, onSuccess }: Props) {
                 {sale.items.map((item) => {
                   const refunded = item.refundedQuantity || 0;
                   const remaining = item.quantity - refunded;
-                  const isRefundableProduct = item.product.refundable !== false;
-                  const isEligible = isRefundableProduct && remaining > 0;
+                  const isRefundableProduct = item.product.refundable === true;
+                  const isEligible = !isTransactionExpired && isRefundableProduct && remaining > 0;
                   const isSelected = !!selectedItems[item.id];
                   const currentQty = refundQuantities[item.id] || 1;
 
@@ -338,6 +363,10 @@ export default function RefundModal({ sale, onClose, onSuccess }: Props) {
                           {!isRefundableProduct ? (
                             <span className="inline-block mt-2 px-2 py-0.5 rounded text-[10px] font-semibold bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-900">
                               Non-refundable Product
+                            </span>
+                          ) : isTransactionExpired ? (
+                            <span className="inline-block mt-2 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-900">
+                              Validity Expired
                             </span>
                           ) : remaining === 0 ? (
                             <span className="inline-block mt-2 px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">

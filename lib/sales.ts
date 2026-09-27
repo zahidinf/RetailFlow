@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/auth-guards";
 import { hasPermission } from "@/lib/rbac";
 import { Prisma } from "@prisma/client";
+import { getRefundValidityPeriodConfig } from "@/lib/parameter-settings";
 
 export class SalesAuthorizationError extends Error {
   constructor(message: string = "Forbidden: Insufficient permissions for sales operations") {
@@ -342,6 +343,7 @@ export async function getSalesList(options: SalesFilterOptions = {}) {
               sku: true,
               name: true,
               unit: true,
+              refundable: true,
             },
           },
         },
@@ -449,8 +451,34 @@ export async function getSaleDetailById(saleId: string) {
     throw new SalesAuthorizationError("Access denied: You can only view details of your own sales transactions");
   }
 
+  let refundValidity: {
+    isExpired: boolean;
+    validityPeriodMs: number;
+    validityPeriodHours: number;
+    unit: string;
+    value: number;
+  } | null = null;
+
+  try {
+    const config = await getRefundValidityPeriodConfig();
+    const now = Date.now();
+    const saleDateMs = new Date(sale.createdAt).getTime();
+    const isExpired = (now - saleDateMs) > config.validityPeriodMs;
+    refundValidity = {
+      isExpired,
+      validityPeriodMs: config.validityPeriodMs,
+      validityPeriodHours: config.validityPeriodHours,
+      unit: config.unit,
+      value: config.value,
+    };
+  } catch {
+    // If settings fail or not configured, ignore gracefully
+  }
+
   return {
     ...sale,
+    isRefundExpired: refundValidity?.isExpired ?? false,
+    refundValidity,
     totalAmount: Number(sale.totalAmount),
     paymentReceived: sale.paymentReceived != null ? Number(sale.paymentReceived) : Number(sale.totalAmount),
     change: sale.change != null ? Number(sale.change) : 0,

@@ -3,7 +3,12 @@ import { Prisma } from "@prisma/client";
 import { requireAuth } from "./auth-guards";
 import { hasPermission } from "./rbac";
 import { isUserSuperAdmin } from "./super-admin-validator";
-import { getRefundValidityPeriodHours } from "./parameter-settings";
+import {
+  getRefundValidityPeriodHours,
+  getRefundValidityPeriodConfig,
+  getRefundValidityPeriodMs,
+  RefundValidityConfig,
+} from "./parameter-settings";
 import bcrypt from "bcrypt";
 
 export interface RefundItemInput {
@@ -96,6 +101,43 @@ export async function getEligibleRefundManagers(): Promise<EligibleManager[]> {
 }
 
 /**
+ * Check if a transaction is within configured refund validity duration.
+ * Boundary condition: transaction age <= validityPeriodMs is eligible; > validityPeriodMs is expired.
+ */
+export function isTransactionWithinRefundValidity(
+  createdAt: Date | string | number,
+  validityPeriodMs: number,
+  referenceTime: Date | number = Date.now()
+): boolean {
+  const createdMs = typeof createdAt === "number" ? createdAt : new Date(createdAt).getTime();
+  const refMs = typeof referenceTime === "number" ? referenceTime : new Date(referenceTime).getTime();
+  const elapsedMs = refMs - createdMs;
+  return elapsedMs <= validityPeriodMs;
+}
+
+/**
+ * Check if an item is eligible for refund.
+ * An item is refundable ONLY when product is flagged refundable === true
+ * AND transaction age <= validityPeriodMs
+ * AND remaining refundable quantity > 0.
+ */
+export function isItemRefundEligible(
+  item: { product?: { refundable?: boolean | null } | null; quantity: number; refundedQuantity?: number | null },
+  transactionCreatedAt: Date | string | number,
+  validityPeriodMs: number,
+  referenceTime: Date | number = Date.now()
+): boolean {
+  const isProductRefundable = item.product?.refundable === true;
+  const isWithinValidity = isTransactionWithinRefundValidity(
+    transactionCreatedAt,
+    validityPeriodMs,
+    referenceTime
+  );
+  const remaining = item.quantity - (item.refundedQuantity || 0);
+  return isProductRefundable && isWithinValidity && remaining > 0;
+}
+
+/**
  * Check if a sale is currently eligible for refund and retrieve remaining quantities.
  */
 export async function checkSaleRefundEligibility(saleId: string) {
@@ -139,24 +181,29 @@ export async function checkSaleRefundEligibility(saleId: string) {
   }
 
   // Retrieve configurable refund validity period from Parameter Settings
-  const validityPeriodHours = await getRefundValidityPeriodHours();
+  const validityConfig = await getRefundValidityPeriodConfig();
   const now = new Date();
   const saleDate = new Date(sale.createdAt);
-  const elapsedHours = (now.getTime() - saleDate.getTime()) / (1000 * 60 * 60);
+  const elapsedMs = now.getTime() - saleDate.getTime();
+  const elapsedHours = elapsedMs / (1000 * 60 * 60);
+  const validityPeriodHours = validityConfig.validityPeriodHours;
 
-  if (elapsedHours > validityPeriodHours) {
+  // Boundary condition check: elapsedMs <= validityPeriodMs is eligible; > validityPeriodMs is expired
+  if (!isTransactionWithinRefundValidity(saleDate, validityConfig.validityPeriodMs, now)) {
     return {
       eligible: false,
-      reason: `Refund validity period of ${validityPeriodHours} hours has expired for this transaction. Elapsed: ${elapsedHours.toFixed(1)} hours.`,
+      reason: `Refund validity period of ${validityConfig.value} ${validityConfig.unit.toLowerCase()} has expired for this transaction. Elapsed: ${elapsedHours.toFixed(1)} hours.`,
       validityPeriodHours,
+      validityPeriodMs: validityConfig.validityPeriodMs,
       elapsedHours,
+      elapsedMs,
       sale,
     };
   }
 
-  // Check if any refundable item has remaining quantity
+  // Check if any refundable item has remaining quantity AND product is refundable
   const refundableItems = sale.items.filter(
-    (item) => item.product.refundable && item.quantity - item.refundedQuantity > 0
+    (item) => isItemRefundEligible(item, sale.createdAt, validityConfig.validityPeriodMs, now)
   );
 
   if (refundableItems.length === 0) {
@@ -164,7 +211,9 @@ export async function checkSaleRefundEligibility(saleId: string) {
       eligible: false,
       reason: "No refundable items with remaining quantity available in this transaction.",
       validityPeriodHours,
+      validityPeriodMs: validityConfig.validityPeriodMs,
       elapsedHours,
+      elapsedMs,
       sale,
     };
   }
@@ -172,7 +221,9 @@ export async function checkSaleRefundEligibility(saleId: string) {
   return {
     eligible: true,
     validityPeriodHours,
+    validityPeriodMs: validityConfig.validityPeriodMs,
     elapsedHours,
+    elapsedMs,
     sale,
   };
 }
@@ -293,13 +344,12 @@ export async function processRefund(input: ProcessRefundInput) {
     }
 
     // Configurable time limit check from Parameter Settings
-    const validityPeriodHours = await getRefundValidityPeriodHours();
+    const validityConfig = await getRefundValidityPeriodConfig();
     const now = new Date();
-    const elapsedHours = (now.getTime() - sale.createdAt.getTime()) / (1000 * 60 * 60);
 
-    if (elapsedHours > validityPeriodHours) {
+    if (!isTransactionWithinRefundValidity(sale.createdAt, validityConfig.validityPeriodMs, now)) {
       throw new RefundValidationError(
-        `Refund validity period of ${validityPeriodHours} hours has expired for this transaction`
+        `Refund validity period of ${validityConfig.value} ${validityConfig.unit.toLowerCase()} has expired for this transaction`
       );
     }
 
@@ -326,9 +376,15 @@ export async function processRefund(input: ProcessRefundInput) {
         throw new RefundValidationError(`Item ${reqItem.saleItemId} does not belong to this sale`);
       }
 
-      if (!saleItem.product.refundable) {
+      if (saleItem.product.refundable !== true) {
         throw new RefundValidationError(
           `Product "${saleItem.product.name}" is marked as non-refundable`
+        );
+      }
+
+      if (!isTransactionWithinRefundValidity(sale.createdAt, validityConfig.validityPeriodMs, now)) {
+        throw new RefundValidationError(
+          `Refund validity period of ${validityConfig.value} ${validityConfig.unit.toLowerCase()} has expired for this transaction`
         );
       }
 

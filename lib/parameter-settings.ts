@@ -5,6 +5,7 @@ import {
   isValidTimeUnit,
   getParameterUnitType,
   convertTimeToHours,
+  convertTimeToMs,
 } from "./units";
 
 export const PARAM_REFUND_VALIDITY_PERIOD = "REFUND_VALIDITY_PERIOD";
@@ -145,11 +146,18 @@ export async function getParameterSettingByCode(code: string): Promise<Parameter
   });
 }
 
+export interface RefundValidityConfig {
+  value: number;
+  unit: string;
+  validityPeriodMs: number;
+  validityPeriodHours: number;
+}
+
 /**
- * Retrieve refund validity period in hours from Parameter Settings.
- * Fails safely if missing or invalid; never silently falls back to a hardcoded value.
+ * Retrieve comprehensive refund validity period configuration from Parameter Settings.
+ * Provides exact millisecond duration for consistent internal time comparisons.
  */
-export async function getRefundValidityPeriodHours(): Promise<number> {
+export async function getRefundValidityPeriodConfig(): Promise<RefundValidityConfig> {
   const setting = await getParameterSettingByCode(PARAM_REFUND_VALIDITY_PERIOD);
 
   if (!setting) {
@@ -171,5 +179,28 @@ export async function getRefundValidityPeriodHours(): Promise<number> {
     );
   }
 
-  return convertTimeToHours(raw, setting.unit);
+  const unit = setting.unit || "Hours";
+  return {
+    value: raw,
+    unit,
+    validityPeriodMs: convertTimeToMs(raw, unit),
+    validityPeriodHours: convertTimeToHours(raw, unit),
+  };
+}
+
+/**
+ * Retrieve refund validity period in milliseconds for exact time comparison.
+ */
+export async function getRefundValidityPeriodMs(): Promise<number> {
+  const config = await getRefundValidityPeriodConfig();
+  return config.validityPeriodMs;
+}
+
+/**
+ * Retrieve refund validity period in hours from Parameter Settings.
+ * Fails safely if missing or invalid; never silently falls back to a hardcoded value.
+ */
+export async function getRefundValidityPeriodHours(): Promise<number> {
+  const config = await getRefundValidityPeriodConfig();
+  return config.validityPeriodHours;
 }

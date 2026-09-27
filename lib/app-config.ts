@@ -1,7 +1,7 @@
 import packageJson from "../package.json";
 
 export function getAppVersion(): string {
-  return packageJson.version || "1.0.0";
+  return packageJson.version || "1.1.0";
 }
 
 export function getAppEnvironment(): string {

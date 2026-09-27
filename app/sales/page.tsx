@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { hasPermission } from "@/lib/rbac";
 import { getSalesList } from "@/lib/sales";
 import { prisma } from "@/lib/prisma";
+import { getRefundValidityPeriodConfig } from "@/lib/parameter-settings";
 import Navbar from "@/app/components/Navbar";
 import Footer from "@/app/components/Footer";
 import SalesTable from "./components/SalesTable";
@@ -57,6 +58,7 @@ export default async function SalesPage() {
 
   // Fetch sales scoped by server function
   const initialSales = await getSalesList();
+  const validityConfig = await getRefundValidityPeriodConfig().catch(() => null);
 
   // If permitted to view all sales, provide cashier list for filtering
   let cashiers: { id: string; name: string }[] = [];
@@ -119,6 +121,7 @@ export default async function SalesPage() {
             initialSales={initialSales}
             cashiers={cashiers}
             canViewAll={canViewAll}
+            validityPeriodMs={validityConfig?.validityPeriodMs}
           />
         </main>
 
