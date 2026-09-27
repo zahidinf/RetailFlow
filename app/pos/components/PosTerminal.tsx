@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import ProductImage from "@/app/components/ProductImage";
 import ReceiptModal, { ReceiptSale } from "./ReceiptModal";
 import PosCheckoutModal, { CartItem } from "./PosCheckoutModal";
-import { formatRupiah } from "@/lib/tax-utils";
+import { calculateReverseTax, formatRupiah, generatePaymentSuggestions } from "@/lib/tax-utils";
 import { evaluateCartPromotions, PromotionRule } from "@/lib/promotions-engine";
 
 export interface PosProduct {
@@ -34,6 +34,8 @@ export default function PosTerminal({
   const [currentPage, setCurrentPage] = useState(1);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [promotions] = useState<PromotionRule[]>(initialPromotions);
+  const [paymentMethod, setPaymentMethod] = useState("CASH");
+  const [paymentInput, setPaymentInput] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [receiptModalSale, setReceiptModalSale] = useState<ReceiptSale | null>(null);
@@ -182,6 +184,7 @@ export default function PosTerminal({
   const clearCart = () => {
     setCart([]);
     setError(null);
+    setPaymentInput("");
   };
 
   const handleAddTebusMurahItem = (promo: any) => {
@@ -307,8 +310,66 @@ export default function PosTerminal({
     }
   };
 
-  // Grand Total for Normal Cart view
+  // Grand Total, reverse tax and dynamic payment suggestions for POS Terminal right side checkout
   const normalCartTotal = promoCalculation.finalSubtotal;
+  const totalDiscount = promoCalculation.totalDiscount;
+  const { preTaxAmount, taxAmount, taxRate } = calculateReverseTax(normalCartTotal);
+
+  // Dynamic payment suggestions recalculated whenever Grand Total changes
+  const paymentSuggestions = useMemo(() => {
+    return generatePaymentSuggestions(normalCartTotal);
+  }, [normalCartTotal]);
+
+  const isCash = paymentMethod === "CASH";
+  const effectivePaymentReceived = isCash
+    ? Number(paymentInput.replace(/\D/g, "")) || 0
+    : normalCartTotal;
+  const change = isCash ? Math.max(0, effectivePaymentReceived - normalCartTotal) : 0;
+  const isPaymentSufficient = normalCartTotal > 0 && effectivePaymentReceived >= normalCartTotal;
+
+  const handlePaymentInputChange = (val: string) => {
+    const raw = val.replace(/\D/g, "");
+    if (!raw) {
+      setPaymentInput("");
+      return;
+    }
+    const num = Number(raw);
+    setPaymentInput(num.toLocaleString("id-ID"));
+  };
+
+  const handleSelectSuggestion = (amount: number) => {
+    setPaymentMethod("CASH");
+    setPaymentInput(amount.toLocaleString("id-ID"));
+    setError(null);
+  };
+
+  const handleSetExact = () => {
+    if (normalCartTotal > 0) {
+      setPaymentMethod("CASH");
+      setPaymentInput(normalCartTotal.toLocaleString("id-ID"));
+    }
+  };
+
+  const handleDirectCheckout = async () => {
+    if (cart.length === 0) {
+      setError("Cart is empty.");
+      return;
+    }
+
+    if (isCash && (!paymentInput || effectivePaymentReceived <= 0)) {
+      setError("Please enter a valid payment amount.");
+      return;
+    }
+
+    if (effectivePaymentReceived < normalCartTotal) {
+      setError("Insufficient payment. Please enter an amount equal to or greater than the Grand Total.");
+      return;
+    }
+
+    await handleProcessPayment(paymentMethod, effectivePaymentReceived, change);
+    setPaymentInput("");
+  };
+
   const totalItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
@@ -506,7 +567,7 @@ export default function PosTerminal({
           </div>
 
           {/* Cart Items List */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
             {cart.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center text-slate-400 dark:text-slate-500 py-12">
                 <svg className="w-12 h-12 mb-3 text-slate-300 dark:text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -605,23 +666,186 @@ export default function PosTerminal({
             )}
           </div>
 
-          {/* Normal Cart Footer: Grand Total and Complete Sale & Checkout button */}
-          <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 rounded-b-xl space-y-3">
-            <div className="flex items-center justify-between text-slate-900 dark:text-white font-bold text-base">
-              <span>Grand Total:</span>
-              <span className="text-blue-600 dark:text-blue-400">{formatRupiah(normalCartTotal)}</span>
+          {/* POS Checkout & Payment Confirmation Panel on the right side */}
+          <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/60 rounded-b-xl space-y-3.5 overflow-y-auto">
+            <div className="flex items-center justify-between pb-1 border-b border-slate-200 dark:border-slate-800">
+              <h3 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+                <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+                Payment / Checkout Confirmation
+              </h3>
+              {promoCalculation.eligibilityList.some((e) => e.isEligible) && (
+                <button
+                  type="button"
+                  onClick={() => setIsCheckoutModalOpen(true)}
+                  className="text-[11px] font-semibold text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1"
+                >
+                  <span>Promos Available</span>
+                  <span>→</span>
+                </button>
+              )}
             </div>
 
+            {/* Price & Tax details */}
+            <div className="p-2.5 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 space-y-1.5 text-xs">
+              <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                <span>Price Before Tax (Pre-Tax)</span>
+                <span className="font-medium text-slate-900 dark:text-white">{formatRupiah(preTaxAmount)}</span>
+              </div>
+              <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                <span>Tax (PPN {Math.round(taxRate * 100)}% Included)</span>
+                <span className="font-medium text-slate-900 dark:text-white">{formatRupiah(taxAmount)}</span>
+              </div>
+              {totalDiscount > 0 && (
+                <div className="flex justify-between text-green-600 dark:text-green-400 font-semibold">
+                  <span>Discount</span>
+                  <span>{formatRupiah(totalDiscount)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-slate-950 dark:text-white font-bold text-sm pt-1.5 border-t border-slate-100 dark:border-slate-700">
+                <span>Grand Total</span>
+                <span className="text-blue-600 dark:text-blue-400">{formatRupiah(normalCartTotal)}</span>
+              </div>
+            </div>
+
+            {/* Payment Method Selector */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                Payment Method
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {["CASH", "QRIS", "DEBIT"].map((method) => (
+                  <button
+                    key={method}
+                    type="button"
+                    onClick={() => {
+                      setPaymentMethod(method);
+                      if (method !== "CASH" && normalCartTotal > 0) {
+                        setPaymentInput(normalCartTotal.toLocaleString("id-ID"));
+                      }
+                    }}
+                    className={`py-2 text-xs font-bold rounded-lg border transition-all ${
+                      paymentMethod === method
+                        ? "bg-blue-600 text-white border-blue-600 shadow-xs"
+                        : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-400"
+                    }`}
+                  >
+                    {method}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Payment Amount Suggestions */}
+            {isCash && normalCartTotal > 0 && paymentSuggestions.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Payment Suggestions
+                  </label>
+                  <span className="text-[10px] text-slate-400">Click to apply</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {paymentSuggestions.map((suggestion) => {
+                    const isCurrentInput =
+                      effectivePaymentReceived === suggestion && paymentInput !== "";
+
+                    return (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        onClick={() => handleSelectSuggestion(suggestion)}
+                        className={`flex-1 min-w-[85px] py-1.5 px-2 text-xs font-bold rounded-lg border transition-all text-center ${
+                          isCurrentInput
+                            ? "bg-blue-600 text-white border-blue-600 shadow-xs ring-2 ring-blue-300 dark:ring-blue-900"
+                            : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 hover:border-slate-400"
+                        }`}
+                      >
+                        {formatRupiah(suggestion)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Payment Amount Input */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Payment Amount
+                </label>
+                {isCash && normalCartTotal > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleSetExact}
+                    className="text-[11px] font-semibold text-blue-600 hover:underline"
+                  >
+                    Exact Amount
+                  </button>
+                )}
+              </div>
+
+              <div className="relative">
+                <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">Rp</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="0"
+                  value={isCash ? paymentInput : normalCartTotal.toLocaleString("id-ID")}
+                  onChange={(e) => isCash && handlePaymentInputChange(e.target.value)}
+                  disabled={!isCash || isLoading || cart.length === 0}
+                  className="w-full pl-9 pr-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white font-bold text-sm focus:outline-none focus:border-blue-500 disabled:opacity-75"
+                />
+              </div>
+            </div>
+
+            {/* Change Display */}
+            {isCash && (
+              <div
+                className={`p-3 rounded-lg border text-xs flex justify-between items-center transition-colors ${
+                  effectivePaymentReceived > 0 && effectivePaymentReceived < normalCartTotal
+                    ? "bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-900/60 text-red-700 dark:text-red-300 font-medium"
+                    : "bg-green-50 dark:bg-green-950/40 border-green-200 dark:border-green-900/60 text-green-700 dark:text-green-300 font-medium"
+                }`}
+              >
+                <span className="font-semibold">
+                  {effectivePaymentReceived > 0 && effectivePaymentReceived < normalCartTotal
+                    ? "Insufficient Payment"
+                    : "Change"}
+                </span>
+                <span className="font-bold text-sm">
+                  {effectivePaymentReceived > 0 && effectivePaymentReceived < normalCartTotal
+                    ? `-${formatRupiah(normalCartTotal - effectivePaymentReceived)}`
+                    : formatRupiah(change)}
+                </span>
+              </div>
+            )}
+
+            {/* Complete Sale & Checkout Button */}
             <button
               type="button"
-              disabled={cart.length === 0}
-              onClick={() => setIsCheckoutModalOpen(true)}
+              disabled={cart.length === 0 || (isCash && !isPaymentSufficient) || isLoading}
+              onClick={handleDirectCheckout}
               className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-md transition-all text-sm flex items-center justify-center gap-2"
             >
-              <span>Complete Sale & Checkout</span>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-              </svg>
+              {isLoading ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  Processing Sale...
+                </>
+              ) : (
+                <>
+                  <span>Complete Sale & Checkout</span>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                  </svg>
+                </>
+              )}
             </button>
           </div>
         </div>
