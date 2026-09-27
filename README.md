@@ -182,4 +182,8 @@ When initialized with `npm run prisma:seed-rbac`, the following development test
 
 ## License
 
-This project is currently unlicensed. All rights reserved.
+RetailFlow is proprietary portfolio software. The source code is publicly available for portfolio, educational, recruitment, interview, and evaluation purposes only.
+
+The source code may not be commercially used, redistributed, sublicensed, republished, or incorporated into another product without prior written permission from the author.
+
+See the `LICENSE` file for the complete terms.

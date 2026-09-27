@@ -1,0 +1,30 @@
+Copyright (c) 2026 Farhan Hasanudin
+All rights reserved.
+
+RetailFlow is proprietary software developed and maintained by Farhan Hasanudin as a portfolio and technical evaluation project.
+
+The source code in this repository is made publicly accessible strictly for personal, educational, recruitment, interview, and evaluation purposes.
+
+1. PERMITTED USE
+You are granted a non-exclusive, non-transferable, revocable permission to view, browse, inspect, and evaluate the source code solely for:
+- Personal, educational, and non-commercial learning;
+- Recruitment, hiring evaluation, and interview review of the author's work;
+- Technical architecture and code quality assessment.
+
+2. RESTRICTIONS
+Except as expressly authorized under Section 1 or with prior written permission from the copyright holder, you may NOT:
+- Commercially use, operate, deploy, or exploit the software or any portion thereof;
+- Copy, duplicate, reproduce, or redistribute the source code, binaries, or documentation;
+- Modify, adapt, translate, or create derivative works based on this software for redistribution or public deployment;
+- Sublicense, lease, rent, sell, assign, transfer, or distribute the software or any derivative works;
+- Incorporate substantial or non-trivial portions of this source code into another software product, project, package, or commercial service;
+- Publish, mirror, or redistribute the source code or modified versions in any public or private repository, forum, or distribution channel;
+- Represent, market, or claim the project, its source code, architecture, or derivative works as your own.
+
+3. RESERVATION OF RIGHTS
+The source code and all intellectual property rights remain the exclusive property of Farhan Hasanudin. No rights, titles, or interests in or to the software are transferred to you, and no broad open-source permissions or public licenses (such as MIT, Apache 2.0, or GNU GPL) are granted.
+
+Any commercial use, redistribution, derivative work distribution, or other use outside the scope expressly permitted in Section 1 requires prior written permission from the copyright holder.
+
+4. DISCLAIMER
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
